@@ -59,6 +59,7 @@ class SwooleConnectionAdapter implements ConnectionInterface
         $this->hyperfConnection = $hyperfConnection;
         if ($hyperfConnection !== null) {
             // Extract PDO from Hyperf connection
+            // @phpstan-ignore-next-line - getPdo() is available via __call magic method
             $this->pdo = $hyperfConnection->getPdo();
             // getPdo() returns \PDO (non-nullable per stub), so initialized is always true here
             $this->initialized = true;

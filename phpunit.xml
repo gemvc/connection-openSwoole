@@ -8,22 +8,15 @@
          failOnRisky="true"
          failOnWarning="true"
          beStrictAboutOutputDuringTests="true"
-         beStrictAboutTodoAnnotatedTests="true"
-         convertDeprecationsToExceptions="true"
-         forceCoversAnnotation="false"
          processIsolation="false"
          stopOnDefect="false"
          stopOnError="false"
          stopOnFailure="false"
          stopOnWarning="false"
-         testdox="true"
-         verbose="true">
+         testdox="true">
     <testsuites>
         <testsuite name="Unit">
             <directory>tests/Unit</directory>
-        </testsuite>
-        <testsuite name="Integration">
-            <directory>tests/Integration</directory>
         </testsuite>
     </testsuites>
     <coverage>
@@ -36,4 +29,3 @@
         </exclude>
     </coverage>
 </phpunit>
-

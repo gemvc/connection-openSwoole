@@ -403,7 +403,10 @@ class SwooleConnection implements ConnectionManagerInterface
     public function getPoolStats(): array
     {
         $config = $this->getDatabaseConfig();
-        $poolConfig = $config['default']['pool'] ?? [];
+        /** @var array<string, mixed> $defaultConfig */
+        $defaultConfig = $config['default'] ?? [];
+        /** @var array<string, mixed> $poolConfig */
+        $poolConfig = $defaultConfig['pool'] ?? [];
 
         return [
             'type' => 'OpenSwoole Connection Manager (True Connection Pooling)',
@@ -411,17 +414,17 @@ class SwooleConnection implements ConnectionManagerInterface
             'active_connections' => count($this->activeConnections),
             'initialized' => $this->initialized,
             'pool_config' => [
-                'min_connections' => $poolConfig['min_connections'] ?? 8,
-                'max_connections' => $poolConfig['max_connections'] ?? 16,
-                'connect_timeout' => $poolConfig['connect_timeout'] ?? 10.0,
-                'wait_timeout' => $poolConfig['wait_timeout'] ?? 2.0,
-                'heartbeat' => $poolConfig['heartbeat'] ?? -1,
-                'max_idle_time' => $poolConfig['max_idle_time'] ?? 60.0,
+                'min_connections' => is_numeric($poolConfig['min_connections'] ?? null) ? (int) $poolConfig['min_connections'] : 8,
+                'max_connections' => is_numeric($poolConfig['max_connections'] ?? null) ? (int) $poolConfig['max_connections'] : 16,
+                'connect_timeout' => is_numeric($poolConfig['connect_timeout'] ?? null) ? (float) $poolConfig['connect_timeout'] : 10.0,
+                'wait_timeout' => is_numeric($poolConfig['wait_timeout'] ?? null) ? (float) $poolConfig['wait_timeout'] : 2.0,
+                'heartbeat' => is_numeric($poolConfig['heartbeat'] ?? null) ? (int) $poolConfig['heartbeat'] : -1,
+                'max_idle_time' => is_numeric($poolConfig['max_idle_time'] ?? null) ? (float) $poolConfig['max_idle_time'] : 60.0,
             ],
             'config' => [
-                'driver' => $config['default']['driver'] ?? 'unknown',
-                'host' => $config['default']['host'] ?? 'unknown',
-                'database' => $config['default']['database'] ?? 'unknown',
+                'driver' => is_string($defaultConfig['driver'] ?? null) ? $defaultConfig['driver'] : 'unknown',
+                'host' => is_string($defaultConfig['host'] ?? null) ? $defaultConfig['host'] : 'unknown',
+                'database' => is_string($defaultConfig['database'] ?? null) ? $defaultConfig['database'] : 'unknown',
             ]
         ];
     }
