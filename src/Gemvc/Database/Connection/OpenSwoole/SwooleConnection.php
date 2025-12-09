@@ -84,6 +84,9 @@ class SwooleConnection implements ConnectionManagerInterface
     /** @var array<string, ConnectionInterface> Active connections by pool name */
     private array $activeConnections = [];
 
+    /** @var SwooleEnvDetect Environment detection utility */
+    private SwooleEnvDetect $envDetect;
+
     /**
      * Constructor
      * 
@@ -112,6 +115,7 @@ class SwooleConnection implements ConnectionManagerInterface
      */
     public function __construct()
     {
+        $this->envDetect = new SwooleEnvDetect();
         $this->initialize();
     }
 
@@ -176,12 +180,12 @@ class SwooleConnection implements ConnectionManagerInterface
     {
         try {
             // Debug: Log when pool is actually created (should only happen once per worker)
-            if (($_ENV['APP_ENV'] ?? '') === 'dev') {
+            if ($this->envDetect->isDevEnvironment()) {
                 error_log("SwooleConnection: Creating new connection pool [Worker PID: " . getmypid() . "]");
             }
 
-            // Get the configuration directly from the private method inside this class
-            $dbConfig = $this->getDatabaseConfig();
+            // Get the configuration from environment detector
+            $dbConfig = $this->envDetect->getDatabaseConfig();
 
             // Initialize the Hyperf Dependency Injection container
             $this->container = new Container(new DefinitionSource([]));
@@ -357,7 +361,7 @@ class SwooleConnection implements ConnectionManagerInterface
      */
     public function getPoolStats(): array
     {
-        $config = $this->getDatabaseConfig();
+        $config = $this->envDetect->getDatabaseConfig();
         /** @var array<string, mixed> $defaultConfig */
         $defaultConfig = $config['default'] ?? [];
         /** @var array<string, mixed> $poolConfig */
@@ -366,6 +370,7 @@ class SwooleConnection implements ConnectionManagerInterface
         return [
             'type' => 'OpenSwoole Connection Manager (True Connection Pooling)',
             'environment' => 'OpenSwoole',
+            'execution_context' => $this->envDetect->getExecutionContext(),
             'active_connections' => count($this->activeConnections),
             'initialized' => $this->initialized,
             'pool_config' => [
@@ -385,72 +390,6 @@ class SwooleConnection implements ConnectionManagerInterface
     }
 
     /**
-     * Builds the database configuration array by reading environment variables.
-     * This makes the class independent of external config files.
-     *
-     * @return array<string, mixed> The database configuration array
-     */
-    private function getDatabaseConfig(): array
-    {
-        return [
-            'default' => [
-                'driver' => is_string($_ENV['DB_DRIVER'] ?? 'mysql') ? ($_ENV['DB_DRIVER'] ?? 'mysql') : 'mysql',
-                'host' => $this->getDbHost(),
-                'port' => is_numeric($_ENV['DB_PORT'] ?? '3306') ? (int) ($_ENV['DB_PORT'] ?? '3306') : 3306,
-                'database' => is_string($_ENV['DB_NAME'] ?? 'gemvc_db') ? ($_ENV['DB_NAME'] ?? 'gemvc_db') : 'gemvc_db',
-                'username' => is_string($_ENV['DB_USER'] ?? 'root') ? ($_ENV['DB_USER'] ?? 'root') : 'root',
-                'password' => is_string($_ENV['DB_PASSWORD'] ?? '') ? ($_ENV['DB_PASSWORD'] ?? '') : '',
-                'charset' => is_string($_ENV['DB_CHARSET'] ?? 'utf8mb4') ? ($_ENV['DB_CHARSET'] ?? 'utf8mb4') : 'utf8mb4',
-                'collation' => is_string($_ENV['DB_COLLATION'] ?? 'utf8mb4_unicode_ci') ? ($_ENV['DB_COLLATION'] ?? 'utf8mb4_unicode_ci') : 'utf8mb4_unicode_ci',
-                'pool' => [
-                    // PERFORMANCE: Optimized defaults for production workloads
-                    'min_connections' => is_numeric($_ENV['MIN_DB_CONNECTION_POOL'] ?? '8') ? (int) ($_ENV['MIN_DB_CONNECTION_POOL'] ?? '8') : 8,
-                    'max_connections' => is_numeric($_ENV['MAX_DB_CONNECTION_POOL'] ?? '16') ? (int) ($_ENV['MAX_DB_CONNECTION_POOL'] ?? '16') : 16,
-                    'connect_timeout' => is_numeric($_ENV['DB_CONNECTION_TIME_OUT'] ?? '10.0') ? (float) ($_ENV['DB_CONNECTION_TIME_OUT'] ?? '10.0') : 10.0,
-                    'wait_timeout' => is_numeric($_ENV['DB_CONNECTION_EXPIER_TIME'] ?? '2.0') ? (float) ($_ENV['DB_CONNECTION_EXPIER_TIME'] ?? '2.0') : 2.0,
-                    // PERFORMANCE: Disabled heartbeat for better performance (pool handles health)
-                    'heartbeat' => is_numeric($_ENV['DB_HEARTBEAT'] ?? '-1') ? (int) ($_ENV['DB_HEARTBEAT'] ?? '-1') : -1,
-                    'max_idle_time' => is_numeric($_ENV['DB_CONNECTION_MAX_AGE'] ?? '60.0') ? (float) ($_ENV['DB_CONNECTION_MAX_AGE'] ?? '60.0') : 60.0,
-                ],
-            ],
-        ];
-    }
-
-    /**
-     * Determines the correct database host based on the execution context (CLI vs Server).
-     * 
-     * Logic:
-     * 1. If running in OpenSwoole server context (CLI + SWOOLE_BASE defined or OpenSwoole\Server class exists):
-     *    - Uses DB_HOST environment variable (defaults to 'db')
-     * 2. If running in true CLI context (CLI but not OpenSwoole):
-     *    - Uses DB_HOST_CLI_DEV environment variable (defaults to 'localhost')
-     * 3. If running in web server context (non-CLI):
-     *    - Uses DB_HOST environment variable (defaults to 'db')
-     * 
-     * @return string The database host
-     */
-    private function getDbHost(): string
-    {
-        // Check if we're running in OpenSwoole server context
-        // OpenSwoole runs in CLI mode but we need to detect if it's the web server
-        if (PHP_SAPI === 'cli' && (defined('SWOOLE_BASE') || class_exists('\OpenSwoole\Server'))) {
-            // Running in OpenSwoole server - use container host
-            $host = $_ENV['DB_HOST'] ?? 'db';
-            return is_string($host) ? $host : 'db';
-        }
-        
-        // True CLI context - use localhost
-        if (PHP_SAPI === 'cli') {
-            $host = $_ENV['DB_HOST_CLI_DEV'] ?? 'localhost';
-            return is_string($host) ? $host : 'localhost';
-        }
-        
-        // In any other context (like web server), use the container host
-        $host = $_ENV['DB_HOST'] ?? 'db';
-        return is_string($host) ? $host : 'db';
-    }
-
-    /**
      * Create and store adapter for Hyperf Connection
      * 
      * Creates a SwooleConnectionAdapter wrapping the Hyperf Connection,
@@ -467,7 +406,7 @@ class SwooleConnection implements ConnectionManagerInterface
         $this->activeConnections[$poolName] = $adapter;
         
         // Log in dev environment
-        if (($_ENV['APP_ENV'] ?? '') === 'dev') {
+        if ($this->envDetect->isDevEnvironment()) {
             error_log("SwooleConnection: New connection retrieved from pool: {$poolName}");
         }
         

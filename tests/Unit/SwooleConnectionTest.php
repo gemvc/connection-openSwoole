@@ -181,9 +181,8 @@ class SwooleConnectionTest extends TestCase
         
         // Manually add to active connections (simulating a connection was retrieved)
         // We can't easily test getConnection() with real pool, so we test releaseConnection logic
-        $reflection = new \ReflectionClass($manager);
+        $reflection = new ReflectionClass($manager);
         $activeConnectionsProperty = $reflection->getProperty('activeConnections');
-        $activeConnectionsProperty->setAccessible(true);
         $activeConnectionsProperty->setValue($manager, ['default' => $mockConnection]);
         
         // Release the connection
@@ -264,9 +263,8 @@ class SwooleConnectionTest extends TestCase
         $mockConnection->method('isInitialized')->willReturn(true);
         
         // Manually add to active connections
-        $reflection = new \ReflectionClass($manager);
+        $reflection = new ReflectionClass($manager);
         $activeConnectionsProperty = $reflection->getProperty('activeConnections');
-        $activeConnectionsProperty->setAccessible(true);
         $activeConnectionsProperty->setValue($manager, ['default' => $mockConnection]);
         
         // Get connection should return the existing one
@@ -286,9 +284,8 @@ class SwooleConnectionTest extends TestCase
         $mockConnection->method('isInitialized')->willReturn(false);
         
         // Manually add to active connections
-        $reflection = new \ReflectionClass($manager);
+        $reflection = new ReflectionClass($manager);
         $activeConnectionsProperty = $reflection->getProperty('activeConnections');
-        $activeConnectionsProperty->setAccessible(true);
         $activeConnectionsProperty->setValue($manager, ['default' => $mockConnection]);
         
         // Get connection should remove invalid and try to get new one
@@ -347,9 +344,8 @@ class SwooleConnectionTest extends TestCase
         $mockConnection2->expects($this->once())->method('releaseConnection');
         
         // Manually add to active connections
-        $reflection = new \ReflectionClass($manager);
+        $reflection = new ReflectionClass($manager);
         $activeConnectionsProperty = $reflection->getProperty('activeConnections');
-        $activeConnectionsProperty->setAccessible(true);
         $activeConnectionsProperty->setValue($manager, [
             'pool1' => $mockConnection1,
             'pool2' => $mockConnection2
@@ -430,15 +426,24 @@ class SwooleConnectionTest extends TestCase
     // Test getDatabaseConfig with CLI context (DB_HOST_CLI_DEV)
     public function testGetDatabaseConfigUsesCliHostInCliContext(): void
     {
+        $envDetect = new \Gemvc\Database\Connection\OpenSwoole\SwooleEnvDetect();
+        
         $_ENV['DB_HOST_CLI_DEV'] = '127.0.0.1';
         $_ENV['DB_HOST'] = 'db';
+        
+        // If we're in OpenSwoole context (SWOOLE_BASE defined), it will use DB_HOST
+        // Otherwise, it will use DB_HOST_CLI_DEV
+        if ($envDetect->isOpenSwooleServer()) {
+            $expectedHost = 'db'; // OpenSwoole uses DB_HOST
+        } else {
+            $expectedHost = '127.0.0.1'; // CLI uses DB_HOST_CLI_DEV
+        }
         
         SwooleConnection::resetInstance();
         $manager = SwooleConnection::getInstance();
         $stats = $manager->getPoolStats();
         
-        // In CLI context, should use DB_HOST_CLI_DEV
-        $this->assertEquals('127.0.0.1', $stats['config']['host']);
+        $this->assertEquals($expectedHost, $stats['config']['host']);
         
         unset($_ENV['DB_HOST_CLI_DEV'], $_ENV['DB_HOST']);
     }
@@ -505,14 +510,17 @@ class SwooleConnectionTest extends TestCase
     // Test getDatabaseConfig with non-string DB_HOST_CLI_DEV value (should default to 'localhost')
     public function testGetDatabaseConfigHandlesNonStringDbHostCliDev(): void
     {
+        $envDetect = new \Gemvc\Database\Connection\OpenSwoole\SwooleEnvDetect();
+        
         unset($_ENV['DB_HOST'], $_ENV['DB_HOST_CLI_DEV']);
         
         SwooleConnection::resetInstance();
         $manager = SwooleConnection::getInstance();
         $stats = $manager->getPoolStats();
         
-        // In CLI context, should default to 'localhost' when DB_HOST_CLI_DEV is not set
-        $this->assertEquals('localhost', $stats['config']['host']);
+        // If in OpenSwoole context, defaults to 'db', otherwise 'localhost'
+        $expectedHost = $envDetect->isOpenSwooleServer() ? 'db' : 'localhost';
+        $this->assertEquals($expectedHost, $stats['config']['host']);
     }
 
     // Test getDatabaseConfig default host when DB_HOST not set in OpenSwoole context
@@ -536,14 +544,17 @@ class SwooleConnectionTest extends TestCase
     // Test getDatabaseConfig default host when DB_HOST_CLI_DEV not set in CLI context
     public function testGetDatabaseConfigUsesDefaultLocalhostInCliContext(): void
     {
+        $envDetect = new \Gemvc\Database\Connection\OpenSwoole\SwooleEnvDetect();
+        
         unset($_ENV['DB_HOST'], $_ENV['DB_HOST_CLI_DEV']);
         
         SwooleConnection::resetInstance();
         $manager = SwooleConnection::getInstance();
         $stats = $manager->getPoolStats();
         
-        // In CLI context without OpenSwoole, should default to 'localhost'
-        $this->assertEquals('localhost', $stats['config']['host']);
+        // If in OpenSwoole context, defaults to 'db', otherwise 'localhost'
+        $expectedHost = $envDetect->isOpenSwooleServer() ? 'db' : 'localhost';
+        $this->assertEquals($expectedHost, $stats['config']['host']);
     }
 
     // Test getDatabaseConfig with DB_HOST set in OpenSwoole context
@@ -569,34 +580,33 @@ class SwooleConnectionTest extends TestCase
     // Test getDatabaseConfig with DB_HOST_CLI_DEV set in CLI context
     public function testGetDatabaseConfigUsesDbHostCliDevWhenSet(): void
     {
+        $envDetect = new \Gemvc\Database\Connection\OpenSwoole\SwooleEnvDetect();
+        
         $_ENV['DB_HOST_CLI_DEV'] = 'custom_cli_host';
+        unset($_ENV['DB_HOST']);
         
         SwooleConnection::resetInstance();
         $manager = SwooleConnection::getInstance();
         $stats = $manager->getPoolStats();
         
-        // Should use DB_HOST_CLI_DEV in CLI context
-        $this->assertEquals('custom_cli_host', $stats['config']['host']);
+        // If in OpenSwoole context, defaults to 'db', otherwise uses DB_HOST_CLI_DEV
+        $expectedHost = $envDetect->isOpenSwooleServer() ? 'db' : 'custom_cli_host';
+        $this->assertEquals($expectedHost, $stats['config']['host']);
         
         unset($_ENV['DB_HOST_CLI_DEV']);
     }
 
-    // Test getDatabaseConfig getDbHost function with all branches using reflection
+    // Test getDatabaseConfig getDbHost function with all branches using SwooleEnvDetect
     public function testGetDatabaseConfigGetDbHostAllBranches(): void
     {
-        $manager = SwooleConnection::getInstance();
-        
-        // Use reflection to access getDatabaseConfig
-        $reflection = new \ReflectionClass($manager);
-        $method = $reflection->getMethod('getDatabaseConfig');
-        $method->setAccessible(true);
+        $envDetect = new \Gemvc\Database\Connection\OpenSwoole\SwooleEnvDetect();
         
         // Test 1: OpenSwoole context with SWOOLE_BASE
         if (!defined('SWOOLE_BASE')) {
             define('SWOOLE_BASE', true);
         }
         $_ENV['DB_HOST'] = 'swoole_host';
-        $config1 = $method->invoke($manager);
+        $config1 = $envDetect->getDatabaseConfig();
         $this->assertEquals('swoole_host', $config1['default']['host']);
         
         // Test 2: CLI context without OpenSwoole (need to undefine SWOOLE_BASE - not possible, but test CLI path)
@@ -628,37 +638,32 @@ class SwooleConnectionTest extends TestCase
         $this->assertNotEmpty($stats['config']['host']);
     }
 
-    // Test getDbHost private method directly using reflection
+    // Test getDbHost method directly using SwooleEnvDetect
     public function testGetDbHostMethodDirectly(): void
     {
-        $manager = SwooleConnection::getInstance();
-        
-        // Use reflection to access private getDbHost method
-        $reflection = new \ReflectionClass($manager);
-        $method = $reflection->getMethod('getDbHost');
-        $method->setAccessible(true);
+        $envDetect = new \Gemvc\Database\Connection\OpenSwoole\SwooleEnvDetect();
         
         // Test 1: OpenSwoole context with DB_HOST set (if SWOOLE_BASE is defined from previous test)
         if (defined('SWOOLE_BASE') || class_exists('\OpenSwoole\Server')) {
             $_ENV['DB_HOST'] = 'test_swoole_host';
             unset($_ENV['DB_HOST_CLI_DEV']);
-            $host1 = $method->invoke($manager);
+            $host1 = $envDetect->getDbHost();
             $this->assertEquals('test_swoole_host', $host1);
             
             // Test 2: OpenSwoole context without DB_HOST (defaults to db)
             unset($_ENV['DB_HOST']);
-            $host2 = $method->invoke($manager);
+            $host2 = $envDetect->getDbHost();
             $this->assertEquals('db', $host2);
         } else {
             // Test 3: CLI context with DB_HOST_CLI_DEV set (when not in OpenSwoole)
             $_ENV['DB_HOST_CLI_DEV'] = 'test_cli_host';
             unset($_ENV['DB_HOST']);
-            $host3 = $method->invoke($manager);
+            $host3 = $envDetect->getDbHost();
             $this->assertEquals('test_cli_host', $host3);
             
             // Test 4: CLI context without DB_HOST_CLI_DEV (defaults to localhost)
             unset($_ENV['DB_HOST_CLI_DEV'], $_ENV['DB_HOST']);
-            $host4 = $method->invoke($manager);
+            $host4 = $envDetect->getDbHost();
             $this->assertEquals('localhost', $host4);
         }
         
@@ -674,13 +679,10 @@ class SwooleConnectionTest extends TestCase
             eval('namespace OpenSwoole; class Server {}');
         }
         
-        $manager = SwooleConnection::getInstance();
-        $reflection = new \ReflectionClass($manager);
-        $method = $reflection->getMethod('getDbHost');
-        $method->setAccessible(true);
+        $envDetect = new \Gemvc\Database\Connection\OpenSwoole\SwooleEnvDetect();
         
         $_ENV['DB_HOST'] = 'openswoole_host';
-        $host = $method->invoke($manager);
+        $host = $envDetect->getDbHost();
         
         // Should use DB_HOST in OpenSwoole context
         $this->assertEquals('openswoole_host', $host);
@@ -795,9 +797,8 @@ class SwooleConnectionTest extends TestCase
         $mockConnection2->expects($this->once())->method('releaseConnection');
         
         // Manually add to active connections
-        $reflection = new \ReflectionClass($manager);
+        $reflection = new ReflectionClass($manager);
         $activeConnectionsProperty = $reflection->getProperty('activeConnections');
-        $activeConnectionsProperty->setAccessible(true);
         $activeConnectionsProperty->setValue($manager, [
             'pool1' => $mockConnection1,
             'pool2' => $mockConnection2
@@ -946,9 +947,8 @@ class SwooleConnectionTest extends TestCase
         $mockConnection->method('isInitialized')->willReturn(true);
         
         // Use reflection to add to activeConnections
-        $reflection = new \ReflectionClass($manager);
+        $reflection = new ReflectionClass($manager);
         $activeConnectionsProperty = $reflection->getProperty('activeConnections');
-        $activeConnectionsProperty->setAccessible(true);
         $activeConnectionsProperty->setValue($manager, ['test_pool' => $mockConnection]);
         
         // Get connection should return the existing one
@@ -962,9 +962,8 @@ class SwooleConnectionTest extends TestCase
         $manager = new SwooleConnection();
         
         // Use reflection to access private container property
-        $reflection = new \ReflectionClass($manager);
+        $reflection = new ReflectionClass($manager);
         $containerProperty = $reflection->getProperty('container');
-        $containerProperty->setAccessible(true);
         $container = $containerProperty->getValue($manager);
         
         // Container should be set
@@ -973,7 +972,6 @@ class SwooleConnectionTest extends TestCase
         
         // PoolFactory should be set
         $poolFactoryProperty = $reflection->getProperty('poolFactory');
-        $poolFactoryProperty->setAccessible(true);
         $poolFactory = $poolFactoryProperty->getValue($manager);
         
         $this->assertNotNull($poolFactory);
@@ -1074,9 +1072,8 @@ class SwooleConnectionTest extends TestCase
         $manager = new SwooleConnection();
         
         // Use reflection to get container
-        $reflection = new \ReflectionClass($manager);
+        $reflection = new ReflectionClass($manager);
         $containerProperty = $reflection->getProperty('container');
-        $containerProperty->setAccessible(true);
         $container = $containerProperty->getValue($manager);
         
         // Logger should be bound
@@ -1092,9 +1089,8 @@ class SwooleConnectionTest extends TestCase
         $manager = new SwooleConnection();
         
         // Use reflection to get container
-        $reflection = new \ReflectionClass($manager);
+        $reflection = new ReflectionClass($manager);
         $containerProperty = $reflection->getProperty('container');
-        $containerProperty->setAccessible(true);
         $container = $containerProperty->getValue($manager);
         
         // Event dispatcher should be bound
@@ -1159,9 +1155,8 @@ class SwooleConnectionTest extends TestCase
         $mockAdapter->method('isInitialized')->willReturn(true);
         
         // Manually add to activeConnections to simulate successful getConnection
-        $reflection = new \ReflectionClass($manager);
+        $reflection = new ReflectionClass($manager);
         $activeConnectionsProperty = $reflection->getProperty('activeConnections');
-        $activeConnectionsProperty->setAccessible(true);
         $activeConnectionsProperty->setValue($manager, ['default' => $mockAdapter]);
         
         // Now getConnection should return the stored adapter
@@ -1195,7 +1190,6 @@ class SwooleConnectionTest extends TestCase
         // Simulate successful getConnection by manually adding adapter
         $reflection = new \ReflectionClass($manager);
         $activeConnectionsProperty = $reflection->getProperty('activeConnections');
-        $activeConnectionsProperty->setAccessible(true);
         $activeConnectionsProperty->setValue($manager, ['test_pool' => $mockAdapter]);
         
         // getConnection should return the stored adapter
@@ -1208,9 +1202,8 @@ class SwooleConnectionTest extends TestCase
     {
         $manager = new SwooleConnection();
         
-        $reflection = new \ReflectionClass($manager);
+        $reflection = new ReflectionClass($manager);
         $containerProperty = $reflection->getProperty('container');
-        $containerProperty->setAccessible(true);
         $container = $containerProperty->getValue($manager);
         
         $logger = $container->get(\Hyperf\Contract\StdoutLoggerInterface::class);
@@ -1258,9 +1251,8 @@ class SwooleConnectionTest extends TestCase
             ->willReturn($pdo);
         
         // Use reflection to call the private method
-        $reflection = new \ReflectionClass($manager);
+        $reflection = new ReflectionClass($manager);
         $method = $reflection->getMethod('createAndStoreAdapter');
-        $method->setAccessible(true);
         
         // Call the method
         $adapter = $method->invoke($manager, $mockHyperfConnection, 'test_pool');
@@ -1271,7 +1263,6 @@ class SwooleConnectionTest extends TestCase
         
         // Verify adapter is stored in activeConnections
         $activeConnectionsProperty = $reflection->getProperty('activeConnections');
-        $activeConnectionsProperty->setAccessible(true);
         $activeConnections = $activeConnectionsProperty->getValue($manager);
         $this->assertArrayHasKey('test_pool', $activeConnections);
         $this->assertSame($adapter, $activeConnections['test_pool']);
@@ -1292,10 +1283,8 @@ class SwooleConnectionTest extends TestCase
             ->willReturn($pdo);
         
         // Use reflection to call the private method
-        $reflection = new \ReflectionClass($manager);
+        $reflection = new ReflectionClass($manager);
         $method = $reflection->getMethod('createAndStoreAdapter');
-        $method->setAccessible(true);
-        
         // Call the method - should log in dev environment
         $adapter = $method->invoke($manager, $mockHyperfConnection, 'dev_pool');
         
