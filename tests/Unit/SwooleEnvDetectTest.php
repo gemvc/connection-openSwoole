@@ -34,6 +34,23 @@ class SwooleEnvDetectTest extends TestCase
         if (class_exists('\OpenSwoole\Server')) {
             $this->assertTrue($this->envDetect->isOpenSwooleServer());
         }
+        
+        // Test that it returns false when not in CLI
+        // We can't easily test this without changing PHP_SAPI, but we verify the logic
+        // The method checks: PHP_SAPI === 'cli' && (defined('SWOOLE_BASE') || class_exists('\OpenSwoole\Server'))
+        // So if we're in CLI but neither condition is true, it should return false
+        // This is already tested implicitly by isCliContext()
+    }
+    
+    // Test isOpenSwooleServer returns false when conditions not met
+    public function testIsOpenSwooleServerReturnsFalse(): void
+    {
+        // When not in OpenSwoole context, should return false
+        // This is tested by checking that isCliContext() works correctly
+        // If isOpenSwooleServer() returned true when it shouldn't, isCliContext() would fail
+        if (PHP_SAPI === 'cli' && !defined('SWOOLE_BASE') && !class_exists('\OpenSwoole\Server')) {
+            $this->assertFalse($this->envDetect->isOpenSwooleServer());
+        }
     }
 
     // Test isCliContext detection
@@ -44,6 +61,15 @@ class SwooleEnvDetectTest extends TestCase
             $this->assertTrue($this->envDetect->isCliContext());
         }
     }
+    
+    // Test isCliContext returns false when not in CLI
+    public function testIsCliContextReturnsFalse(): void
+    {
+        // When in OpenSwoole server context, should return false
+        if ($this->envDetect->isOpenSwooleServer()) {
+            $this->assertFalse($this->envDetect->isCliContext());
+        }
+    }
 
     // Test isWebServerContext detection
     public function testIsWebServerContext(): void
@@ -52,128 +78,229 @@ class SwooleEnvDetectTest extends TestCase
             $this->assertTrue($this->envDetect->isWebServerContext());
         }
     }
+    
+    // Test isWebServerContext returns false when in CLI
+    public function testIsWebServerContextReturnsFalse(): void
+    {
+        // When in CLI, should return false
+        if (PHP_SAPI === 'cli') {
+            $this->assertFalse($this->envDetect->isWebServerContext());
+        }
+    }
 
-    // Test getExecutionContext
+    // Test getExecutionContext (using property)
     public function testGetExecutionContext(): void
     {
-        $context = $this->envDetect->getExecutionContext();
+        $context = $this->envDetect->executionContext;
         $this->assertContains($context, ['openswoole', 'cli', 'webserver']);
     }
+    
+    // Test getExecutionContext returns correct value for each context (using properties)
+    public function testGetExecutionContextReturnsCorrectValue(): void
+    {
+        if ($this->envDetect->isOpenSwooleServer) {
+            $this->assertEquals('openswoole', $this->envDetect->executionContext);
+        } elseif ($this->envDetect->isCliContext) {
+            $this->assertEquals('cli', $this->envDetect->executionContext);
+        } else {
+            $this->assertEquals('webserver', $this->envDetect->executionContext);
+        }
+    }
+    
+    // Test getExecutionContext web server branch using anonymous class
+    // This ensures 100% coverage of the 'webserver' return statement
+    public function testGetExecutionContextWebServerBranch(): void
+    {
+        // Create a testable subclass that forces the web server branch
+        $testableClass = new class extends SwooleEnvDetect {
+            protected function computeIsOpenSwooleServer(): bool
+            {
+                return false; // Force not OpenSwoole
+            }
+            
+            protected function computeIsCliContext(bool $isOpenSwooleServer): bool
+            {
+                return false; // Force not CLI
+            }
+        };
+        
+        // Now executionContext property should be 'webserver'
+        $this->assertEquals('webserver', $testableClass->executionContext);
+    }
 
-    // Test getDbHost in OpenSwoole context
+    // Test getDbHost in OpenSwoole context (using properties)
     public function testGetDbHostInOpenSwooleContext(): void
     {
-        if ($this->envDetect->isOpenSwooleServer()) {
+        if ($this->envDetect->isOpenSwooleServer) {
             $_ENV['DB_HOST'] = 'swoole_db';
-            $host = $this->envDetect->getDbHost();
-            $this->assertEquals('swoole_db', $host);
+            // Create new instance to pick up the env var
+            $envDetect = new SwooleEnvDetect();
+            $this->assertEquals('swoole_db', $envDetect->dbHost);
             
             unset($_ENV['DB_HOST']);
-            $host = $this->envDetect->getDbHost();
-            $this->assertEquals('db', $host);
+            $envDetect = new SwooleEnvDetect();
+            $this->assertEquals('db', $envDetect->dbHost);
         }
     }
 
-    // Test getDbHost in CLI context
+    // Test getDbHost in CLI context (using properties)
     public function testGetDbHostInCliContext(): void
     {
-        if ($this->envDetect->isCliContext()) {
+        if ($this->envDetect->isCliContext) {
             $_ENV['DB_HOST_CLI_DEV'] = 'cli_db';
-            $host = $this->envDetect->getDbHost();
-            $this->assertEquals('cli_db', $host);
+            // Create new instance to pick up the env var
+            $envDetect = new SwooleEnvDetect();
+            $this->assertEquals('cli_db', $envDetect->dbHost);
             
             unset($_ENV['DB_HOST_CLI_DEV']);
-            $host = $this->envDetect->getDbHost();
-            $this->assertEquals('localhost', $host);
+            $envDetect = new SwooleEnvDetect();
+            $this->assertEquals('localhost', $envDetect->dbHost);
         }
     }
 
-    // Test getDbHost in web server context
+    // Test getDbHost in web server context (using properties)
     public function testGetDbHostInWebServerContext(): void
     {
-        if ($this->envDetect->isWebServerContext()) {
+        if ($this->envDetect->isWebServerContext) {
             $_ENV['DB_HOST'] = 'web_db';
-            $host = $this->envDetect->getDbHost();
-            $this->assertEquals('web_db', $host);
+            // Create new instance to pick up the env var
+            $envDetect = new SwooleEnvDetect();
+            $this->assertEquals('web_db', $envDetect->dbHost);
             
             unset($_ENV['DB_HOST']);
-            $host = $this->envDetect->getDbHost();
-            $this->assertEquals('db', $host);
+            $envDetect = new SwooleEnvDetect();
+            $this->assertEquals('db', $envDetect->dbHost);
         }
     }
 
-    // Test isDevEnvironment
+    // Test isDevEnvironment (using property)
     public function testIsDevEnvironment(): void
     {
         $_ENV['APP_ENV'] = 'dev';
-        $this->assertTrue($this->envDetect->isDevEnvironment());
+        $envDetect = new SwooleEnvDetect();
+        $this->assertTrue($envDetect->isDevEnvironment);
         
         $_ENV['APP_ENV'] = 'production';
-        $this->assertFalse($this->envDetect->isDevEnvironment());
+        $envDetect = new SwooleEnvDetect();
+        $this->assertFalse($envDetect->isDevEnvironment);
         
         unset($_ENV['APP_ENV']);
-        $this->assertFalse($this->envDetect->isDevEnvironment());
+        $envDetect = new SwooleEnvDetect();
+        $this->assertFalse($envDetect->isDevEnvironment);
     }
 
-    // Test getStringEnv
+    // Test getStringEnv using reflection
     public function testGetStringEnv(): void
     {
+        $reflection = new \ReflectionClass($this->envDetect);
+        $method = $reflection->getMethod('getStringEnv');
+        $method->setAccessible(true);
+        
         $_ENV['TEST_STRING'] = 'test_value';
-        $this->assertEquals('test_value', $this->envDetect->getStringEnv('TEST_STRING'));
-        $this->assertEquals('default', $this->envDetect->getStringEnv('NON_EXISTENT', 'default'));
+        $this->assertEquals('test_value', $method->invoke($this->envDetect, 'TEST_STRING'));
+        $this->assertEquals('default', $method->invoke($this->envDetect, 'NON_EXISTENT', 'default'));
+        
+        // Test with non-string value (should return default)
+        $_ENV['TEST_STRING'] = 123;
+        $this->assertEquals('default', $method->invoke($this->envDetect, 'TEST_STRING', 'default'));
+        
+        $_ENV['TEST_STRING'] = null;
+        $this->assertEquals('default', $method->invoke($this->envDetect, 'TEST_STRING', 'default'));
+        
+        $_ENV['TEST_STRING'] = [];
+        $this->assertEquals('default', $method->invoke($this->envDetect, 'TEST_STRING', 'default'));
         
         unset($_ENV['TEST_STRING']);
     }
 
-    // Test getIntEnv
+    // Test getIntEnv using reflection
     public function testGetIntEnv(): void
     {
+        $reflection = new \ReflectionClass($this->envDetect);
+        $method = $reflection->getMethod('getIntEnv');
+        $method->setAccessible(true);
+        
         $_ENV['TEST_INT'] = '123';
-        $this->assertEquals(123, $this->envDetect->getIntEnv('TEST_INT'));
-        $this->assertEquals(456, $this->envDetect->getIntEnv('NON_EXISTENT', 456));
+        $this->assertEquals(123, $method->invoke($this->envDetect, 'TEST_INT'));
+        $this->assertEquals(456, $method->invoke($this->envDetect, 'NON_EXISTENT', 456));
         
         $_ENV['TEST_INT'] = 'invalid';
-        $this->assertEquals(0, $this->envDetect->getIntEnv('TEST_INT', 0));
+        $this->assertEquals(0, $method->invoke($this->envDetect, 'TEST_INT', 0));
+        
+        // Test with numeric string
+        $_ENV['TEST_INT'] = '456';
+        $this->assertEquals(456, $method->invoke($this->envDetect, 'TEST_INT'));
+        
+        // Test with negative number
+        $_ENV['TEST_INT'] = '-10';
+        $this->assertEquals(-10, $method->invoke($this->envDetect, 'TEST_INT'));
+        
+        // Test with float string (should convert to int)
+        $_ENV['TEST_INT'] = '123.45';
+        $this->assertEquals(123, $method->invoke($this->envDetect, 'TEST_INT'));
         
         unset($_ENV['TEST_INT']);
     }
 
-    // Test getFloatEnv
+    // Test getFloatEnv using reflection
     public function testGetFloatEnv(): void
     {
+        $reflection = new \ReflectionClass($this->envDetect);
+        $method = $reflection->getMethod('getFloatEnv');
+        $method->setAccessible(true);
+        
         $_ENV['TEST_FLOAT'] = '123.45';
-        $this->assertEquals(123.45, $this->envDetect->getFloatEnv('TEST_FLOAT'));
-        $this->assertEquals(67.89, $this->envDetect->getFloatEnv('NON_EXISTENT', 67.89));
+        $this->assertEquals(123.45, $method->invoke($this->envDetect, 'TEST_FLOAT'));
+        $this->assertEquals(67.89, $method->invoke($this->envDetect, 'NON_EXISTENT', 67.89));
         
         $_ENV['TEST_FLOAT'] = 'invalid';
-        $this->assertEquals(0.0, $this->envDetect->getFloatEnv('TEST_FLOAT', 0.0));
+        $this->assertEquals(0.0, $method->invoke($this->envDetect, 'TEST_FLOAT', 0.0));
+        
+        // Test with integer string
+        $_ENV['TEST_FLOAT'] = '100';
+        $this->assertEquals(100.0, $method->invoke($this->envDetect, 'TEST_FLOAT'));
+        
+        // Test with negative float
+        $_ENV['TEST_FLOAT'] = '-45.67';
+        $this->assertEquals(-45.67, $method->invoke($this->envDetect, 'TEST_FLOAT'));
+        
+        // Test with scientific notation
+        $_ENV['TEST_FLOAT'] = '1.5e2';
+        $this->assertEquals(150.0, $method->invoke($this->envDetect, 'TEST_FLOAT'));
         
         unset($_ENV['TEST_FLOAT']);
     }
 
-    // Test database configuration getters
+    // Test database configuration properties
     public function testDatabaseConfigurationGetters(): void
     {
         $_ENV['DB_DRIVER'] = 'pgsql';
-        $this->assertEquals('pgsql', $this->envDetect->getDbDriver());
+        $envDetect = new SwooleEnvDetect();
+        $this->assertEquals('pgsql', $envDetect->dbDriver);
         
         $_ENV['DB_PORT'] = '5432';
-        $this->assertEquals(5432, $this->envDetect->getDbPort());
+        $envDetect = new SwooleEnvDetect();
+        $this->assertEquals(5432, $envDetect->dbPort);
         
         $_ENV['DB_NAME'] = 'test_db';
-        $this->assertEquals('test_db', $this->envDetect->getDbName());
+        $envDetect = new SwooleEnvDetect();
+        $this->assertEquals('test_db', $envDetect->dbName);
         
         $_ENV['DB_USER'] = 'test_user';
-        $this->assertEquals('test_user', $this->envDetect->getDbUser());
+        $envDetect = new SwooleEnvDetect();
+        $this->assertEquals('test_user', $envDetect->dbUser);
         
         $_ENV['DB_PASSWORD'] = 'test_pass';
-        $this->assertEquals('test_pass', $this->envDetect->getDbPassword());
+        $envDetect = new SwooleEnvDetect();
+        $this->assertEquals('test_pass', $envDetect->dbPassword);
         
         $_ENV['DB_CHARSET'] = 'utf8';
-        $this->assertEquals('utf8', $this->envDetect->getDbCharset());
+        $envDetect = new SwooleEnvDetect();
+        $this->assertEquals('utf8', $envDetect->dbCharset);
         
         $_ENV['DB_COLLATION'] = 'utf8_general_ci';
-        $this->assertEquals('utf8_general_ci', $this->envDetect->getDbCollation());
+        $envDetect = new SwooleEnvDetect();
+        $this->assertEquals('utf8_general_ci', $envDetect->dbCollation);
         
         // Clean up
         unset(
@@ -187,26 +314,32 @@ class SwooleEnvDetectTest extends TestCase
         );
     }
 
-    // Test pool configuration getters
+    // Test pool configuration properties
     public function testPoolConfigurationGetters(): void
     {
         $_ENV['MIN_DB_CONNECTION_POOL'] = '10';
-        $this->assertEquals(10, $this->envDetect->getMinConnectionPool());
+        $envDetect = new SwooleEnvDetect();
+        $this->assertEquals(10, $envDetect->minConnectionPool);
         
         $_ENV['MAX_DB_CONNECTION_POOL'] = '20';
-        $this->assertEquals(20, $this->envDetect->getMaxConnectionPool());
+        $envDetect = new SwooleEnvDetect();
+        $this->assertEquals(20, $envDetect->maxConnectionPool);
         
         $_ENV['DB_CONNECTION_TIME_OUT'] = '15.5';
-        $this->assertEquals(15.5, $this->envDetect->getConnectionTimeout());
+        $envDetect = new SwooleEnvDetect();
+        $this->assertEquals(15.5, $envDetect->connectionTimeout);
         
         $_ENV['DB_CONNECTION_EXPIER_TIME'] = '3.5';
-        $this->assertEquals(3.5, $this->envDetect->getWaitTimeout());
+        $envDetect = new SwooleEnvDetect();
+        $this->assertEquals(3.5, $envDetect->waitTimeout);
         
         $_ENV['DB_HEARTBEAT'] = '30';
-        $this->assertEquals(30, $this->envDetect->getHeartbeat());
+        $envDetect = new SwooleEnvDetect();
+        $this->assertEquals(30, $envDetect->heartbeat);
         
         $_ENV['DB_CONNECTION_MAX_AGE'] = '120.0';
-        $this->assertEquals(120.0, $this->envDetect->getMaxIdleTime());
+        $envDetect = new SwooleEnvDetect();
+        $this->assertEquals(120.0, $envDetect->maxIdleTime);
         
         // Clean up
         unset(
@@ -219,10 +352,10 @@ class SwooleEnvDetectTest extends TestCase
         );
     }
 
-    // Test getDatabaseConfig returns complete structure
+    // Test databaseConfig property returns complete structure
     public function testGetDatabaseConfigReturnsCompleteStructure(): void
     {
-        $config = $this->envDetect->getDatabaseConfig();
+        $config = $this->envDetect->databaseConfig;
         
         $this->assertArrayHasKey('default', $config);
         $this->assertArrayHasKey('driver', $config['default']);
@@ -244,7 +377,7 @@ class SwooleEnvDetectTest extends TestCase
         $this->assertArrayHasKey('max_idle_time', $pool);
     }
 
-    // Test getDatabaseConfig uses environment variables
+    // Test databaseConfig property uses environment variables
     public function testGetDatabaseConfigUsesEnvironmentVariables(): void
     {
         $_ENV['DB_DRIVER'] = 'pgsql';
@@ -253,7 +386,8 @@ class SwooleEnvDetectTest extends TestCase
         $_ENV['MIN_DB_CONNECTION_POOL'] = '5';
         $_ENV['MAX_DB_CONNECTION_POOL'] = '10';
         
-        $config = $this->envDetect->getDatabaseConfig();
+        $envDetect = new SwooleEnvDetect();
+        $config = $envDetect->databaseConfig;
         
         $this->assertEquals('pgsql', $config['default']['driver']);
         $this->assertEquals('custom_db', $config['default']['database']);
@@ -271,7 +405,7 @@ class SwooleEnvDetectTest extends TestCase
         );
     }
 
-    // Test getDatabaseConfig uses defaults when env vars not set
+    // Test databaseConfig property uses defaults when env vars not set
     public function testGetDatabaseConfigUsesDefaults(): void
     {
         // Unset all DB env vars
@@ -286,7 +420,8 @@ class SwooleEnvDetectTest extends TestCase
             $_ENV['MAX_DB_CONNECTION_POOL']
         );
         
-        $config = $this->envDetect->getDatabaseConfig();
+        $envDetect = new SwooleEnvDetect();
+        $config = $envDetect->databaseConfig;
         
         $this->assertEquals('mysql', $config['default']['driver']);
         $this->assertEquals('gemvc_db', $config['default']['database']);
@@ -296,6 +431,191 @@ class SwooleEnvDetectTest extends TestCase
         $this->assertEquals('utf8mb4_unicode_ci', $config['default']['collation']);
         $this->assertEquals(8, $config['default']['pool']['min_connections']);
         $this->assertEquals(16, $config['default']['pool']['max_connections']);
+    }
+    
+    // Test getStringEnv with empty string using reflection
+    public function testGetStringEnvWithEmptyString(): void
+    {
+        $reflection = new \ReflectionClass($this->envDetect);
+        $method = $reflection->getMethod('getStringEnv');
+        $method->setAccessible(true);
+        
+        $_ENV['TEST_EMPTY'] = '';
+        // Empty string is a valid string, so it should be returned
+        $this->assertEquals('', $method->invoke($this->envDetect, 'TEST_EMPTY'));
+        $this->assertEquals('', $method->invoke($this->envDetect, 'TEST_EMPTY', 'default'));
+        
+        unset($_ENV['TEST_EMPTY']);
+    }
+    
+    // Test getIntEnv with zero using reflection
+    public function testGetIntEnvWithZero(): void
+    {
+        $reflection = new \ReflectionClass($this->envDetect);
+        $method = $reflection->getMethod('getIntEnv');
+        $method->setAccessible(true);
+        
+        $_ENV['TEST_ZERO'] = '0';
+        $this->assertEquals(0, $method->invoke($this->envDetect, 'TEST_ZERO'));
+        $this->assertEquals(0, $method->invoke($this->envDetect, 'TEST_ZERO', 100));
+        
+        unset($_ENV['TEST_ZERO']);
+    }
+    
+    // Test getFloatEnv with zero using reflection
+    public function testGetFloatEnvWithZero(): void
+    {
+        $reflection = new \ReflectionClass($this->envDetect);
+        $method = $reflection->getMethod('getFloatEnv');
+        $method->setAccessible(true);
+        
+        $_ENV['TEST_ZERO'] = '0.0';
+        $this->assertEquals(0.0, $method->invoke($this->envDetect, 'TEST_ZERO'));
+        $this->assertEquals(0.0, $method->invoke($this->envDetect, 'TEST_ZERO', 100.0));
+        
+        unset($_ENV['TEST_ZERO']);
+    }
+    
+    // Test getDbHost covers all branches (using properties)
+    public function testGetDbHostCoversAllBranches(): void
+    {
+        // Test OpenSwoole branch
+        if ($this->envDetect->isOpenSwooleServer) {
+            $_ENV['DB_HOST'] = 'swoole_host';
+            $envDetect = new SwooleEnvDetect();
+            $this->assertEquals('swoole_host', $envDetect->dbHost);
+            unset($_ENV['DB_HOST']);
+        }
+        
+        // Test CLI branch
+        if ($this->envDetect->isCliContext) {
+            $_ENV['DB_HOST_CLI_DEV'] = 'cli_host';
+            $envDetect = new SwooleEnvDetect();
+            $this->assertEquals('cli_host', $envDetect->dbHost);
+            unset($_ENV['DB_HOST_CLI_DEV']);
+        }
+        
+        // Test web server branch
+        if ($this->envDetect->isWebServerContext) {
+            $_ENV['DB_HOST'] = 'web_host';
+            $envDetect = new SwooleEnvDetect();
+            $this->assertEquals('web_host', $envDetect->dbHost);
+            unset($_ENV['DB_HOST']);
+        }
+    }
+    
+    // Test getDbHost OpenSwoole branch with SWOOLE_BASE (using properties)
+    public function testGetDbHostOpenSwooleBranchWithSwooleBase(): void
+    {
+        // Ensure SWOOLE_BASE is defined to test OpenSwoole branch
+        if (!defined('SWOOLE_BASE')) {
+            define('SWOOLE_BASE', true);
+        }
+        
+        $envDetect = new SwooleEnvDetect();
+        if ($envDetect->isOpenSwooleServer) {
+            // Test with DB_HOST set
+            $_ENV['DB_HOST'] = 'swoole_base_host';
+            $envDetect = new SwooleEnvDetect();
+            $this->assertEquals('swoole_base_host', $envDetect->dbHost);
+            
+            // Test with DB_HOST not set (default)
+            unset($_ENV['DB_HOST']);
+            $envDetect = new SwooleEnvDetect();
+            $this->assertEquals('db', $envDetect->dbHost);
+        }
+        
+        unset($_ENV['DB_HOST']);
+    }
+    
+    // Test getDbHost OpenSwoole branch with OpenSwoole\Server class (using properties)
+    public function testGetDbHostOpenSwooleBranchWithServerClass(): void
+    {
+        // Create mock OpenSwoole\Server class if it doesn't exist
+        if (!class_exists('\OpenSwoole\Server')) {
+            eval('namespace OpenSwoole; class Server {}');
+        }
+        
+        $envDetect = new SwooleEnvDetect();
+        if ($envDetect->isOpenSwooleServer) {
+            $_ENV['DB_HOST'] = 'server_class_host';
+            $envDetect = new SwooleEnvDetect();
+            $this->assertEquals('server_class_host', $envDetect->dbHost);
+            
+            unset($_ENV['DB_HOST']);
+            $envDetect = new SwooleEnvDetect();
+            $this->assertEquals('db', $envDetect->dbHost);
+        }
+        
+        unset($_ENV['DB_HOST']);
+    }
+    
+    // Test getDbHost CLI branch thoroughly (using properties)
+    public function testGetDbHostCliBranchThoroughly(): void
+    {
+        // Ensure we're in CLI but not OpenSwoole
+        // This means SWOOLE_BASE should not be defined and OpenSwoole\Server should not exist
+        // But we can't control constants that were already defined, so we test when possible
+        if (PHP_SAPI === 'cli') {
+            // Create a new instance to test
+            $envDetect = new SwooleEnvDetect();
+            
+            // Only test if we're actually in CLI context (not OpenSwoole)
+            if ($envDetect->isCliContext) {
+                // Test with DB_HOST_CLI_DEV set
+                $_ENV['DB_HOST_CLI_DEV'] = 'cli_test_host';
+                $envDetect = new SwooleEnvDetect();
+                $this->assertEquals('cli_test_host', $envDetect->dbHost);
+                
+                // Test with DB_HOST_CLI_DEV not set (default to localhost)
+                unset($_ENV['DB_HOST_CLI_DEV']);
+                $envDetect = new SwooleEnvDetect();
+                $this->assertEquals('localhost', $envDetect->dbHost);
+            }
+        }
+        
+        unset($_ENV['DB_HOST_CLI_DEV']);
+    }
+    
+    // Test getDbHost web server branch using a testable subclass
+    // Since we can't change PHP_SAPI, we create a subclass that forces the web server branch
+    public function testGetDbHostWebServerBranchWithReflection(): void
+    {
+        // Set environment variable BEFORE creating instance
+        $_ENV['DB_HOST'] = 'web_server_test_host';
+        
+        // Create a testable subclass that overrides compute methods
+        $testableClass = new class extends SwooleEnvDetect {
+            protected function computeIsOpenSwooleServer(): bool
+            {
+                return false; // Force not OpenSwoole
+            }
+            
+            protected function computeIsCliContext(bool $isOpenSwooleServer): bool
+            {
+                return false; // Force not CLI
+            }
+        };
+        
+        // Now dbHost property should use web server branch
+        $this->assertEquals('web_server_test_host', $testableClass->dbHost);
+        
+        // Test with DB_HOST not set (default) - need new instance
+        unset($_ENV['DB_HOST']);
+        $testableClass2 = new class extends SwooleEnvDetect {
+            protected function computeIsOpenSwooleServer(): bool
+            {
+                return false; // Force not OpenSwoole
+            }
+            
+            protected function computeIsCliContext(bool $isOpenSwooleServer): bool
+            {
+                return false; // Force not CLI
+            }
+        };
+        $this->assertEquals('db', $testableClass2->dbHost);
+        
+        unset($_ENV['DB_HOST']);
     }
 }
 

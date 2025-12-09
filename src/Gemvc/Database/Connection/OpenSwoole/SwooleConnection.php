@@ -180,12 +180,12 @@ class SwooleConnection implements ConnectionManagerInterface
     {
         try {
             // Debug: Log when pool is actually created (should only happen once per worker)
-            if ($this->envDetect->isDevEnvironment()) {
+            if ($this->envDetect->isDevEnvironment) {
                 error_log("SwooleConnection: Creating new connection pool [Worker PID: " . getmypid() . "]");
             }
 
-            // Get the configuration from environment detector
-            $dbConfig = $this->envDetect->getDatabaseConfig();
+            // Get the configuration from environment detector (using property)
+            $dbConfig = $this->envDetect->databaseConfig;
 
             // Initialize the Hyperf Dependency Injection container
             $this->container = new Container(new DefinitionSource([]));
@@ -357,36 +357,39 @@ class SwooleConnection implements ConnectionManagerInterface
      * 
      * **Implements ConnectionManagerInterface from connection-contracts**
      * 
-     * @return array<string, mixed> Pool statistics
+     * Uses typed SwooleConnectionPoolStats internally for clean OOP design,
+     * then converts to array for interface compatibility.
+     * 
+     * @return array<string, mixed> Pool statistics array
      */
     public function getPoolStats(): array
     {
-        $config = $this->envDetect->getDatabaseConfig();
-        /** @var array<string, mixed> $defaultConfig */
-        $defaultConfig = $config['default'] ?? [];
-        /** @var array<string, mixed> $poolConfig */
-        $poolConfig = $defaultConfig['pool'] ?? [];
+        $stats = SwooleConnectionPoolStats::fromConnection($this, $this->envDetect);
+        return $stats->toArray();
+    }
 
-        return [
-            'type' => 'OpenSwoole Connection Manager (True Connection Pooling)',
-            'environment' => 'OpenSwoole',
-            'execution_context' => $this->envDetect->getExecutionContext(),
-            'active_connections' => count($this->activeConnections),
-            'initialized' => $this->initialized,
-            'pool_config' => [
-                'min_connections' => is_numeric($poolConfig['min_connections'] ?? null) ? (int) $poolConfig['min_connections'] : 8,
-                'max_connections' => is_numeric($poolConfig['max_connections'] ?? null) ? (int) $poolConfig['max_connections'] : 16,
-                'connect_timeout' => is_numeric($poolConfig['connect_timeout'] ?? null) ? (float) $poolConfig['connect_timeout'] : 10.0,
-                'wait_timeout' => is_numeric($poolConfig['wait_timeout'] ?? null) ? (float) $poolConfig['wait_timeout'] : 2.0,
-                'heartbeat' => is_numeric($poolConfig['heartbeat'] ?? null) ? (int) $poolConfig['heartbeat'] : -1,
-                'max_idle_time' => is_numeric($poolConfig['max_idle_time'] ?? null) ? (float) $poolConfig['max_idle_time'] : 60.0,
-            ],
-            'config' => [
-                'driver' => is_string($defaultConfig['driver'] ?? null) ? $defaultConfig['driver'] : 'unknown',
-                'host' => is_string($defaultConfig['host'] ?? null) ? $defaultConfig['host'] : 'unknown',
-                'database' => is_string($defaultConfig['database'] ?? null) ? $defaultConfig['database'] : 'unknown',
-            ]
-        ];
+    /**
+     * Get pool statistics as typed object (for better OOP usage).
+     * 
+     * This method returns a typed, immutable value object instead of an array.
+     * Use this when you want type-safe access to pool statistics.
+     * 
+     * @return SwooleConnectionPoolStats Typed pool statistics object
+     */
+    public function getPoolStatsObject(): SwooleConnectionPoolStats
+    {
+        return SwooleConnectionPoolStats::fromConnection($this, $this->envDetect);
+    }
+
+    /**
+     * Get active connections array (for internal use).
+     * 
+     * @return array<string, ConnectionInterface> Active connections by pool name
+     * @internal Used by SwooleConnectionPoolStats factory method
+     */
+    public function getActiveConnections(): array
+    {
+        return $this->activeConnections;
     }
 
     /**
@@ -406,7 +409,7 @@ class SwooleConnection implements ConnectionManagerInterface
         $this->activeConnections[$poolName] = $adapter;
         
         // Log in dev environment
-        if ($this->envDetect->isDevEnvironment()) {
+        if ($this->envDetect->isDevEnvironment) {
             error_log("SwooleConnection: New connection retrieved from pool: {$poolName}");
         }
         

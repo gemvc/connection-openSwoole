@@ -606,7 +606,8 @@ class SwooleConnectionTest extends TestCase
             define('SWOOLE_BASE', true);
         }
         $_ENV['DB_HOST'] = 'swoole_host';
-        $config1 = $envDetect->getDatabaseConfig();
+        $envDetect = new \Gemvc\Database\Connection\OpenSwoole\SwooleEnvDetect();
+        $config1 = $envDetect->databaseConfig;
         $this->assertEquals('swoole_host', $config1['default']['host']);
         
         // Test 2: CLI context without OpenSwoole (need to undefine SWOOLE_BASE - not possible, but test CLI path)
@@ -647,12 +648,14 @@ class SwooleConnectionTest extends TestCase
         if (defined('SWOOLE_BASE') || class_exists('\OpenSwoole\Server')) {
             $_ENV['DB_HOST'] = 'test_swoole_host';
             unset($_ENV['DB_HOST_CLI_DEV']);
-            $host1 = $envDetect->getDbHost();
+            $envDetect = new \Gemvc\Database\Connection\OpenSwoole\SwooleEnvDetect();
+            $host1 = $envDetect->dbHost;
             $this->assertEquals('test_swoole_host', $host1);
             
             // Test 2: OpenSwoole context without DB_HOST (defaults to db)
             unset($_ENV['DB_HOST']);
-            $host2 = $envDetect->getDbHost();
+            $envDetect = new \Gemvc\Database\Connection\OpenSwoole\SwooleEnvDetect();
+            $host2 = $envDetect->dbHost;
             $this->assertEquals('db', $host2);
         } else {
             // Test 3: CLI context with DB_HOST_CLI_DEV set (when not in OpenSwoole)
@@ -679,10 +682,9 @@ class SwooleConnectionTest extends TestCase
             eval('namespace OpenSwoole; class Server {}');
         }
         
-        $envDetect = new \Gemvc\Database\Connection\OpenSwoole\SwooleEnvDetect();
-        
         $_ENV['DB_HOST'] = 'openswoole_host';
-        $host = $envDetect->getDbHost();
+        $envDetect = new \Gemvc\Database\Connection\OpenSwoole\SwooleEnvDetect();
+        $host = $envDetect->dbHost;
         
         // Should use DB_HOST in OpenSwoole context
         $this->assertEquals('openswoole_host', $host);
