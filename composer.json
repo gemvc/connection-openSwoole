@@ -1,0 +1,65 @@
+{
+    "name": "gemvc/connection-openswoole",
+    "description": "OpenSwoole connection adapter for GEMVC framework",
+    "type": "library",
+    "license": "MIT",
+    "keywords": [
+        "gemvc",
+        "database",
+        "connection",
+        "openswoole",
+        "swoole",
+        "hyperf",
+        "connection-pooling"
+    ],
+    "authors": [
+        {
+            "name": "Ali Khorsandfard",
+            "homepage": "https://www.gemvc.de"
+        }
+    ],
+    "homepage": "https://github.com/gemvc/connection-openswoole",
+    "support": {
+        "issues": "https://github.com/gemvc/connection-openswoole/issues",
+        "source": "https://github.com/gemvc/connection-openswoole"
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/gemvc/connection-openswoole.git"
+    },
+    "require": {
+        "php": ">=8.2",
+        "gemvc/connection-contracts": "^1.0",
+        "hyperf/db-connection": "^3.0",
+        "hyperf/di": "^3.0",
+        "hyperf/config": "^3.0",
+        "hyperf/event": "^3.0",
+        "psr/container": "^2.0",
+        "psr/event-dispatcher": "^1.0",
+        "psr/log": "^3.0"
+    },
+    "require-dev": {
+        "phpstan/phpstan": "^2.1",
+        "phpunit/phpunit": "^10.1"
+    },
+    "autoload": {
+        "psr-4": {
+            "Gemvc\\Database\\Connection\\OpenSwoole\\": "src/Gemvc/Database/Connection/OpenSwoole/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Gemvc\\Database\\Connection\\OpenSwoole\\Tests\\": "tests/"
+        }
+    },
+    "archive": {
+        "exclude": [
+            "/tests",
+            "/.github",
+            "/.phpunit.cache"
+        ]
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}
+
