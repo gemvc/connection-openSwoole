@@ -8,18 +8,15 @@
          failOnRisky="true"
          failOnWarning="true"
          beStrictAboutOutputDuringTests="true"
-         processIsolation="false"
-         stopOnDefect="false"
-         stopOnError="false"
-         stopOnFailure="false"
-         stopOnWarning="false"
          testdox="true">
+
     <testsuites>
         <testsuite name="Unit">
             <directory>tests/Unit</directory>
         </testsuite>
     </testsuites>
-    <coverage>
+
+    <source>
         <include>
             <directory suffix=".php">src</directory>
         </include>
@@ -27,5 +24,6 @@
             <directory>vendor</directory>
             <directory>tests</directory>
         </exclude>
-    </coverage>
+    </source>
+
 </phpunit>
