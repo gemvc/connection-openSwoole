@@ -69,11 +69,11 @@ class SwooleConnection implements ConnectionManagerInterface
     /** @var self|null Singleton instance */
     private static ?self $instance = null;
 
-    /** @var Container The DI container from Hyperf */
-    private Container $container;
+    /** @var Container|null The DI container from Hyperf */
+    private ?Container $container = null;
 
-    /** @var PoolFactory The factory for creating and managing connection pools */
-    private PoolFactory $poolFactory;
+    /** @var PoolFactory|null The factory for creating and managing connection pools */
+    private ?PoolFactory $poolFactory = null;
 
     /** @var string|null Last error message */
     private ?string $error = null;
@@ -86,6 +86,9 @@ class SwooleConnection implements ConnectionManagerInterface
 
     /** @var SwooleEnvDetect Environment detection utility */
     private SwooleEnvDetect $envDetect;
+
+    /** @var SwooleErrorLogLogger Logger instance for debug messages */
+    private ?SwooleErrorLogLogger $logger = null;
 
     /**
      * Constructor
@@ -142,8 +145,10 @@ class SwooleConnection implements ConnectionManagerInterface
             self::$instance = new self();
         } else {
             // Debug: Confirm singleton is being reused
-            if (($_ENV['APP_ENV'] ?? '') === 'dev') {
-                error_log("SwooleConnection: Reusing existing pool [Worker PID: " . getmypid() . "]");
+            // Use envDetect property instead of direct $_ENV access for consistency
+            if (self::$instance->envDetect->isDevEnvironment) {
+                $logger = self::$instance->logger ?? new SwooleErrorLogLogger();
+                $logger->info("SwooleConnection: Reusing existing pool [Worker PID: " . getmypid() . "]");
             }
         }
         return self::$instance;
@@ -174,50 +179,255 @@ class SwooleConnection implements ConnectionManagerInterface
      * Reads environment variables directly (no framework dependency).
      * Framework should ensure $_ENV is populated before using this.
      * 
+     * Orchestrates the initialization process by calling specialized methods.
+     * Each step is isolated for better testability and error handling.
+     * 
      * @return void
      */
     private function initialize(): void
     {
+        // Track initialization state to ensure proper cleanup on failure
+        $containerCreated = false;
+        
         try {
-            // Debug: Log when pool is actually created (should only happen once per worker)
-            if ($this->envDetect->isDevEnvironment) {
-                error_log("SwooleConnection: Creating new connection pool [Worker PID: " . getmypid() . "]");
-            }
+            // Step 1: Initialize logger (needed for error reporting)
+            $this->initializeLogger();
+            
+            // Step 2: Initialize container with basic bindings
+            $this->initializeContainer();
+            $containerCreated = true;
+            
+            // Step 3: Initialize event dispatcher (depends on container)
+            $this->initializeEventDispatcher();
+            
+            // Step 4: Initialize pool factory (depends on container)
+            $this->initializePoolFactory();
+            
+            $this->initialized = true;
+        } catch (\Throwable $e) {
+            // Catch both Exception and Error for robustness
+            $this->handleInitializationFailure($e, $containerCreated);
+        }
+    }
 
-            // Get the configuration from environment detector (using property)
-            $dbConfig = $this->envDetect->databaseConfig;
+    /**
+     * Initialize logger instance.
+     * 
+     * Creates and configures the logger for error reporting and debug messages.
+     * This is done early so errors can be logged during initialization.
+     * 
+     * @return void
+     * @throws \RuntimeException If logger creation fails
+     */
+    private function initializeLogger(): void
+    {
+        $this->logger = new SwooleErrorLogLogger();
+        
+        // Debug: Log when pool is actually created (should only happen once per worker)
+        if ($this->envDetect->isDevEnvironment) {
+            $this->logger->info("SwooleConnection: Creating new connection pool [Worker PID: " . getmypid() . "]");
+        }
+    }
 
+    /**
+     * Initialize Hyperf DI container with basic service bindings.
+     * 
+     * Creates the container and binds essential services:
+     * - Database configuration
+     * - Container self-reference (for dependency injection)
+     * - Logger interface
+     * 
+     * Uses atomic initialization pattern: only assigns to instance property
+     * after all operations succeed, preventing partial initialization state.
+     * 
+     * @return void
+     * @throws \RuntimeException If container creation or binding fails
+     */
+    private function initializeContainer(): void
+    {
+        // Validate prerequisites FIRST (before creating expensive objects)
+        if ($this->logger === null) {
+            throw new \RuntimeException('Logger must be initialized before container');
+        }
+        
+        // Validate database config before using it
+        $dbConfig = $this->envDetect->databaseConfig;
+        if (empty($dbConfig) || !is_array($dbConfig)) {
+            throw new \RuntimeException('Invalid database configuration: config must be a non-empty array');
+        }
+        
+        // Use local variable first to ensure atomicity
+        // Only assign to $this->container if ALL operations succeed
+        $container = null;
+        try {
             // Initialize the Hyperf Dependency Injection container
-            $this->container = new Container(new DefinitionSource([]));
-
+            $container = new Container(new DefinitionSource([]));
+            
             // Bind the database configuration array to the ConfigInterface contract within the container
-            $this->container->set(\Hyperf\Contract\ConfigInterface::class, new Config(['databases' => $dbConfig]));
+            $config = new Config(['databases' => $dbConfig]);
+            $container->set(\Hyperf\Contract\ConfigInterface::class, $config);
             
             // Bind the container instance to the Psr\Container\ContainerInterface contract
-            $this->container->set(ContainerInterface::class, $this->container);
+            // NOTE: This creates a circular reference. PHP 7.4+ GC handles this, but monitor
+            // memory usage in long-running processes (OpenSwoole). If memory issues occur,
+            // consider explicit cleanup in __destruct() to break the cycle.
+            $container->set(ContainerInterface::class, $container);
             
             // Bind the StdoutLoggerInterface required by Hyperf's database connection pool
             // Use a simple logger implementation that doesn't require Symfony Console
-            $this->container->set(StdoutLoggerInterface::class, new SwooleErrorLogLogger());
+            $container->set(StdoutLoggerInterface::class, $this->logger);
             
-            // Bind event dispatcher dependencies required by Hyperf's database connection pool
+            // Only assign to instance property if ALL operations succeeded
+            // This ensures atomicity: either fully initialized or not at all
+            $this->container = $container;
+        } catch (\Throwable $e) {
+            // Clean up container if it was created but bindings failed
+            // Set to null to help GC (container may hold references)
+            if ($container !== null) {
+                $container = null;
+            }
+            
+            // Re-throw with more context, preserving original exception
+            throw new \RuntimeException(
+                'Failed to initialize container: ' . $e->getMessage(),
+                0,
+                $e
+            );
+        }
+    }
+
+    /**
+     * Initialize event dispatcher and bind it to the container.
+     * 
+     * Sets up the event dispatcher system required by Hyperf's connection pool.
+     * This includes creating the listener provider and event dispatcher.
+     * 
+     * Uses atomic initialization pattern: only binds to container after all
+     * objects are successfully created, preventing partial initialization state.
+     * 
+     * @return void
+     * @throws \RuntimeException If event dispatcher setup fails
+     */
+    private function initializeEventDispatcher(): void
+    {
+        // Validate prerequisites FIRST
+        if ($this->container === null) {
+            throw new \RuntimeException('Container must be initialized before event dispatcher');
+        }
+        
+        // Use local variables first to ensure atomicity
+        // Only bind to container if ALL operations succeed
+        $listenerProvider = null;
+        $eventDispatcher = null;
+        try {
+            // Create listener provider
             $listenerProvider = new ListenerProvider();
-            $this->container->set(\Psr\EventDispatcher\ListenerProviderInterface::class, $listenerProvider);
             
-            // Create event dispatcher instance properly
+            // Get logger from container (must exist from initializeContainer)
             $logger = $this->container->get(StdoutLoggerInterface::class);
             /** @var \Psr\Log\LoggerInterface|null $logger */
-            $eventDispatcher = new EventDispatcher($listenerProvider, $logger);
-            $this->container->set(\Psr\EventDispatcher\EventDispatcherInterface::class, $eventDispatcher);
-
-            // Create the PoolFactory, which will use the container to get the configuration
-            $this->poolFactory = new PoolFactory($this->container);
+            if ($logger === null) {
+                throw new \RuntimeException('Logger not found in container after binding');
+            }
             
-            $this->initialized = true;
-        } catch (\Exception $e) {
-            $this->setError('Failed to initialize SwooleConnection: ' . $e->getMessage());
-            $this->initialized = false;
+            // Create event dispatcher instance
+            $eventDispatcher = new EventDispatcher($listenerProvider, $logger);
+            
+            // Only bind to container if ALL operations succeeded
+            // This ensures atomicity: either fully initialized or not at all
+            $this->container->set(\Psr\EventDispatcher\ListenerProviderInterface::class, $listenerProvider);
+            $this->container->set(\Psr\EventDispatcher\EventDispatcherInterface::class, $eventDispatcher);
+        } catch (\Throwable $e) {
+            // Clean up objects if they were created but binding failed
+            // Set to null to help GC
+            if ($listenerProvider !== null) {
+                $listenerProvider = null;
+            }
+            if ($eventDispatcher !== null) {
+                $eventDispatcher = null;
+            }
+            
+            // Re-throw with more context, preserving original exception
+            throw new \RuntimeException(
+                'Failed to initialize event dispatcher: ' . $e->getMessage(),
+                0,
+                $e
+            );
         }
+    }
+
+    /**
+     * Initialize pool factory for connection pool management.
+     * 
+     * Creates the PoolFactory which manages database connection pools.
+     * The factory uses the container to resolve dependencies.
+     * 
+     * Uses atomic initialization pattern: only assigns to instance property
+     * after successful creation, preventing partial initialization state.
+     * 
+     * @return void
+     * @throws \RuntimeException If pool factory creation fails
+     */
+    private function initializePoolFactory(): void
+    {
+        // Validate prerequisites FIRST
+        if ($this->container === null) {
+            throw new \RuntimeException('Container must be initialized before pool factory');
+        }
+        
+        // Use local variable first to ensure atomicity
+        // Only assign to $this->poolFactory if creation succeeds
+        $poolFactory = null;
+        try {
+            // Create the PoolFactory, which will use the container to get the configuration
+            $poolFactory = new PoolFactory($this->container);
+            
+            // Only assign to instance property if creation succeeded
+            // This ensures atomicity: either fully initialized or not at all
+            $this->poolFactory = $poolFactory;
+        } catch (\Throwable $e) {
+            // Clean up pool factory if it was created but assignment failed
+            // Set to null to help GC
+            if ($poolFactory !== null) {
+                $poolFactory = null;
+            }
+            
+            // Re-throw with more context, preserving original exception
+            throw new \RuntimeException(
+                'Failed to initialize pool factory: ' . $e->getMessage(),
+                0,
+                $e
+            );
+        }
+    }
+
+    /**
+     * Handle initialization failure with proper cleanup.
+     * 
+     * Cleans up partially initialized state and sets error information.
+     * Ensures no memory leaks from partially created resources.
+     * 
+     * @param \Throwable $e The exception that caused initialization to fail
+     * @param bool $containerCreated Whether the container was created before failure
+     * @return void
+     */
+    private function handleInitializationFailure(\Throwable $e, bool $containerCreated): void
+    {
+        // Clean up partially initialized state
+        if ($containerCreated) {
+            // Container was created but initialization failed
+            // Set to null to allow GC to clean up (container holds references)
+            $this->container = null;
+        }
+        // poolFactory is already null if not created (default value)
+        
+        // Set error state (logger might be null if exception occurred very early)
+        $errorMessage = 'Failed to initialize SwooleConnection: ' . $e->getMessage();
+        if ($this->logger !== null) {
+            $this->logger->error($errorMessage);
+        }
+        $this->setError($errorMessage);
+        $this->initialized = false;
     }
 
     /**
@@ -252,6 +462,11 @@ class SwooleConnection implements ConnectionManagerInterface
         }
 
         try {
+            // Ensure poolFactory is initialized
+            if ($this->poolFactory === null) {
+                throw new \RuntimeException('Connection pool factory not initialized');
+            }
+            
             // Get Hyperf Connection from pool (REAL IMPLEMENTATION - connection pooling)
             /** @var Connection $hyperfConnection */
             $hyperfConnection = $this->poolFactory->getPool($poolName)->get();
@@ -270,7 +485,8 @@ class SwooleConnection implements ConnectionManagerInterface
                 'error_code' => $e->getCode()
             ];
             $this->setError('Failed to get database connection: ' . $e->getMessage(), $context);
-            error_log("SwooleConnection::getConnection() - Error: " . $e->getMessage() . " [Pool: $poolName]");
+            $logger = $this->logger ?? new SwooleErrorLogLogger();
+            $logger->error("SwooleConnection::getConnection() - Error: " . $e->getMessage() . " [Pool: $poolName]");
             return null;
         }
     }
@@ -410,7 +626,8 @@ class SwooleConnection implements ConnectionManagerInterface
         
         // Log in dev environment
         if ($this->envDetect->isDevEnvironment) {
-            error_log("SwooleConnection: New connection retrieved from pool: {$poolName}");
+            $logger = $this->logger ?? new SwooleErrorLogLogger();
+            $logger->info("SwooleConnection: New connection retrieved from pool: {$poolName}");
         }
         
         return $adapter;
