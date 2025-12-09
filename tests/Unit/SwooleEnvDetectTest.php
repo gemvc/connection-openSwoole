@@ -617,5 +617,109 @@ class SwooleEnvDetectTest extends TestCase
         
         unset($_ENV['DB_HOST']);
     }
+
+    // ============================================================================
+    // Backward Compatibility Methods Tests
+    // ============================================================================
+
+    public function testBackwardCompatibilityIsOpenSwooleServer(): void
+    {
+        $this->assertEquals($this->envDetect->isOpenSwooleServer, $this->envDetect->isOpenSwooleServer());
+    }
+
+    public function testBackwardCompatibilityIsCliContext(): void
+    {
+        $this->assertEquals($this->envDetect->isCliContext, $this->envDetect->isCliContext());
+    }
+
+    public function testBackwardCompatibilityIsWebServerContext(): void
+    {
+        $this->assertEquals($this->envDetect->isWebServerContext, $this->envDetect->isWebServerContext());
+    }
+
+    public function testBackwardCompatibilityGetExecutionContext(): void
+    {
+        $this->assertEquals($this->envDetect->executionContext, $this->envDetect->getExecutionContext());
+    }
+
+    public function testBackwardCompatibilityGetDbHost(): void
+    {
+        $this->assertEquals($this->envDetect->dbHost, $this->envDetect->getDbHost());
+    }
+
+    public function testBackwardCompatibilityIsDevEnvironment(): void
+    {
+        $this->assertEquals($this->envDetect->isDevEnvironment, $this->envDetect->isDevEnvironment());
+    }
+
+    public function testBackwardCompatibilityGetDbDriver(): void
+    {
+        $this->assertEquals($this->envDetect->dbDriver, $this->envDetect->getDbDriver());
+    }
+
+    public function testBackwardCompatibilityGetDbPort(): void
+    {
+        $this->assertEquals($this->envDetect->dbPort, $this->envDetect->getDbPort());
+    }
+
+    public function testBackwardCompatibilityGetDbName(): void
+    {
+        $this->assertEquals($this->envDetect->dbName, $this->envDetect->getDbName());
+    }
+
+    public function testBackwardCompatibilityGetDbUser(): void
+    {
+        $this->assertEquals($this->envDetect->dbUser, $this->envDetect->getDbUser());
+    }
+
+    public function testBackwardCompatibilityGetDbPassword(): void
+    {
+        $this->assertEquals($this->envDetect->dbPassword, $this->envDetect->getDbPassword());
+    }
+
+    public function testBackwardCompatibilityGetDbCharset(): void
+    {
+        $this->assertEquals($this->envDetect->dbCharset, $this->envDetect->getDbCharset());
+    }
+
+    public function testBackwardCompatibilityGetDbCollation(): void
+    {
+        $this->assertEquals($this->envDetect->dbCollation, $this->envDetect->getDbCollation());
+    }
+
+    public function testBackwardCompatibilityGetMinConnectionPool(): void
+    {
+        $this->assertEquals($this->envDetect->minConnectionPool, $this->envDetect->getMinConnectionPool());
+    }
+
+    public function testBackwardCompatibilityGetMaxConnectionPool(): void
+    {
+        $this->assertEquals($this->envDetect->maxConnectionPool, $this->envDetect->getMaxConnectionPool());
+    }
+
+    public function testBackwardCompatibilityGetConnectionTimeout(): void
+    {
+        $this->assertEquals($this->envDetect->connectionTimeout, $this->envDetect->getConnectionTimeout());
+    }
+
+    public function testBackwardCompatibilityGetWaitTimeout(): void
+    {
+        $this->assertEquals($this->envDetect->waitTimeout, $this->envDetect->getWaitTimeout());
+    }
+
+    public function testBackwardCompatibilityGetHeartbeat(): void
+    {
+        $this->assertEquals($this->envDetect->heartbeat, $this->envDetect->getHeartbeat());
+    }
+
+    public function testBackwardCompatibilityGetMaxIdleTime(): void
+    {
+        $this->assertEquals($this->envDetect->maxIdleTime, $this->envDetect->getMaxIdleTime());
+    }
+
+    public function testBackwardCompatibilityGetDatabaseConfig(): void
+    {
+        $this->assertEquals($this->envDetect->databaseConfig, $this->envDetect->getDatabaseConfig());
+    }
 }
 

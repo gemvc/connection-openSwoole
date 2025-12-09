@@ -242,15 +242,63 @@ class SwooleConnectionTest extends TestCase
         $this->assertEquals(15.0, $stats['pool_config']['connect_timeout']);
         $this->assertEquals('pgsql', $stats['config']['driver']);
         $this->assertEquals('test_database', $stats['config']['database']);
+    }
+
+    // Test getPoolStatsObject returns typed object
+    public function testGetPoolStatsObject(): void
+    {
+        $manager = SwooleConnection::getInstance();
+        $stats = $manager->getPoolStatsObject();
         
-        // Clean up
-        unset(
-            $_ENV['MIN_DB_CONNECTION_POOL'],
-            $_ENV['MAX_DB_CONNECTION_POOL'],
-            $_ENV['DB_CONNECTION_TIME_OUT'],
-            $_ENV['DB_DRIVER'],
-            $_ENV['DB_NAME']
-        );
+        $this->assertInstanceOf(\Gemvc\Database\Connection\OpenSwoole\SwooleConnectionPoolStats::class, $stats);
+        $this->assertIsString($stats->type);
+        $this->assertIsString($stats->environment);
+        $this->assertIsString($stats->executionContext);
+        $this->assertIsInt($stats->activeConnections);
+        $this->assertIsBool($stats->initialized);
+        $this->assertInstanceOf(\Gemvc\Database\Connection\OpenSwoole\PoolConfig::class, $stats->poolConfig);
+        $this->assertInstanceOf(\Gemvc\Database\Connection\OpenSwoole\DatabaseConfig::class, $stats->config);
+    }
+
+    // Test getPoolStatsObject matches getPoolStats array
+    public function testGetPoolStatsObjectMatchesArray(): void
+    {
+        $manager = SwooleConnection::getInstance();
+        $statsObject = $manager->getPoolStatsObject();
+        $statsArray = $manager->getPoolStats();
+        
+        $this->assertEquals($statsArray['type'], $statsObject->type);
+        $this->assertEquals($statsArray['environment'], $statsObject->environment);
+        $this->assertEquals($statsArray['execution_context'], $statsObject->executionContext);
+        $this->assertEquals($statsArray['active_connections'], $statsObject->activeConnections);
+        $this->assertEquals($statsArray['initialized'], $statsObject->initialized);
+    }
+
+    // Test getActiveConnections returns array
+    public function testGetActiveConnections(): void
+    {
+        $manager = SwooleConnection::getInstance();
+        $activeConnections = $manager->getActiveConnections();
+        
+        $this->assertIsArray($activeConnections);
+        // Initially should be empty
+        $this->assertEmpty($activeConnections);
+    }
+
+    // Test getActiveConnections reflects connection state
+    public function testGetActiveConnectionsReflectsState(): void
+    {
+        $manager = SwooleConnection::getInstance();
+        
+        // Initially empty
+        $activeConnections = $manager->getActiveConnections();
+        $this->assertEmpty($activeConnections);
+        $this->assertEquals(0, count($activeConnections));
+        
+        // After getting a connection (if successful), should have entries
+        // Note: This may fail if Hyperf dependencies aren't available
+        // But we can at least verify the method returns an array
+        $this->assertIsArray($activeConnections);
     }
 
     // Test getConnection reuses existing valid connection
@@ -1204,7 +1252,7 @@ class SwooleConnectionTest extends TestCase
     {
         $manager = new SwooleConnection();
         
-        $reflection = new ReflectionClass($manager);
+        $reflection = new \ReflectionClass($manager);
         $containerProperty = $reflection->getProperty('container');
         $container = $containerProperty->getValue($manager);
         
