@@ -194,45 +194,7 @@ class SwooleConnection implements ConnectionManagerInterface
             
             // Bind the StdoutLoggerInterface required by Hyperf's database connection pool
             // Use a simple logger implementation that doesn't require Symfony Console
-            $this->container->set(StdoutLoggerInterface::class, new class implements StdoutLoggerInterface {
-                /** @param array<string, mixed> $context */
-                public function emergency(string|\Stringable $message, array $context = []): void { 
-                    error_log("[EMERGENCY] " . (string) $message); 
-                }
-                /** @param array<string, mixed> $context */
-                public function alert(string|\Stringable $message, array $context = []): void { 
-                    error_log("[ALERT] " . (string) $message); 
-                }
-                /** @param array<string, mixed> $context */
-                public function critical(string|\Stringable $message, array $context = []): void { 
-                    error_log("[CRITICAL] " . (string) $message); 
-                }
-                /** @param array<string, mixed> $context */
-                public function error(string|\Stringable $message, array $context = []): void { 
-                    error_log("[ERROR] " . (string) $message); 
-                }
-                /** @param array<string, mixed> $context */
-                public function warning(string|\Stringable $message, array $context = []): void { 
-                    error_log("[WARNING] " . (string) $message); 
-                }
-                /** @param array<string, mixed> $context */
-                public function notice(string|\Stringable $message, array $context = []): void { 
-                    error_log("[NOTICE] " . (string) $message); 
-                }
-                /** @param array<string, mixed> $context */
-                public function info(string|\Stringable $message, array $context = []): void { 
-                    error_log("[INFO] " . (string) $message); 
-                }
-                /** @param array<string, mixed> $context */
-                public function debug(string|\Stringable $message, array $context = []): void { 
-                    error_log("[DEBUG] " . (string) $message); 
-                }
-                /** @param array<string, mixed> $context */
-                public function log(mixed $level, string|\Stringable $message, array $context = []): void { 
-                    $levelStr = is_string($level) ? $level : 'UNKNOWN';
-                    error_log("[" . $levelStr . "] " . (string) $message); 
-                }
-            });
+            $this->container->set(StdoutLoggerInterface::class, new SwooleErrorLogLogger());
             
             // Bind event dispatcher dependencies required by Hyperf's database connection pool
             $listenerProvider = new ListenerProvider();
@@ -294,15 +256,8 @@ class SwooleConnection implements ConnectionManagerInterface
             // The pool's heartbeat mechanism (configured in pool settings) handles dead connections
             // This eliminates an extra database query on every request
             
-            // Create adapter wrapping the Hyperf Connection
-            $adapter = new SwooleConnectionAdapter($hyperfConnection);
-            $this->activeConnections[$poolName] = $adapter;
-            
-            if (($_ENV['APP_ENV'] ?? '') === 'dev') {
-                error_log("SwooleConnection: New connection retrieved from pool: {$poolName}");
-            }
-            
-            return $adapter;
+            // Create and store adapter wrapping the Hyperf Connection
+            return $this->createAndStoreAdapter($hyperfConnection, $poolName);
         } catch (\Throwable $e) {
             $context = [
                 'pool' => $poolName,
@@ -437,34 +392,10 @@ class SwooleConnection implements ConnectionManagerInterface
      */
     private function getDatabaseConfig(): array
     {
-        /**
-         * Determines the correct database host based on the execution context (CLI vs Server).
-         * @return string The database host
-         */
-        $getDbHost = function (): string {
-            // Check if we're running in OpenSwoole server context
-            // OpenSwoole runs in CLI mode but we need to detect if it's the web server
-            if (PHP_SAPI === 'cli' && (defined('SWOOLE_BASE') || class_exists('\OpenSwoole\Server'))) {
-                // Running in OpenSwoole server - use container host
-                $host = $_ENV['DB_HOST'] ?? 'db';
-                return is_string($host) ? $host : 'db';
-            }
-            
-            // True CLI context - use localhost
-            if (PHP_SAPI === 'cli') {
-                $host = $_ENV['DB_HOST_CLI_DEV'] ?? 'localhost';
-                return is_string($host) ? $host : 'localhost';
-            }
-            
-            // In any other context (like web server), use the container host
-            $host = $_ENV['DB_HOST'] ?? 'db';
-            return is_string($host) ? $host : 'db';
-        };
-
         return [
             'default' => [
                 'driver' => is_string($_ENV['DB_DRIVER'] ?? 'mysql') ? ($_ENV['DB_DRIVER'] ?? 'mysql') : 'mysql',
-                'host' => $getDbHost(),
+                'host' => $this->getDbHost(),
                 'port' => is_numeric($_ENV['DB_PORT'] ?? '3306') ? (int) ($_ENV['DB_PORT'] ?? '3306') : 3306,
                 'database' => is_string($_ENV['DB_NAME'] ?? 'gemvc_db') ? ($_ENV['DB_NAME'] ?? 'gemvc_db') : 'gemvc_db',
                 'username' => is_string($_ENV['DB_USER'] ?? 'root') ? ($_ENV['DB_USER'] ?? 'root') : 'root',
@@ -483,6 +414,64 @@ class SwooleConnection implements ConnectionManagerInterface
                 ],
             ],
         ];
+    }
+
+    /**
+     * Determines the correct database host based on the execution context (CLI vs Server).
+     * 
+     * Logic:
+     * 1. If running in OpenSwoole server context (CLI + SWOOLE_BASE defined or OpenSwoole\Server class exists):
+     *    - Uses DB_HOST environment variable (defaults to 'db')
+     * 2. If running in true CLI context (CLI but not OpenSwoole):
+     *    - Uses DB_HOST_CLI_DEV environment variable (defaults to 'localhost')
+     * 3. If running in web server context (non-CLI):
+     *    - Uses DB_HOST environment variable (defaults to 'db')
+     * 
+     * @return string The database host
+     */
+    private function getDbHost(): string
+    {
+        // Check if we're running in OpenSwoole server context
+        // OpenSwoole runs in CLI mode but we need to detect if it's the web server
+        if (PHP_SAPI === 'cli' && (defined('SWOOLE_BASE') || class_exists('\OpenSwoole\Server'))) {
+            // Running in OpenSwoole server - use container host
+            $host = $_ENV['DB_HOST'] ?? 'db';
+            return is_string($host) ? $host : 'db';
+        }
+        
+        // True CLI context - use localhost
+        if (PHP_SAPI === 'cli') {
+            $host = $_ENV['DB_HOST_CLI_DEV'] ?? 'localhost';
+            return is_string($host) ? $host : 'localhost';
+        }
+        
+        // In any other context (like web server), use the container host
+        $host = $_ENV['DB_HOST'] ?? 'db';
+        return is_string($host) ? $host : 'db';
+    }
+
+    /**
+     * Create and store adapter for Hyperf Connection
+     * 
+     * Creates a SwooleConnectionAdapter wrapping the Hyperf Connection,
+     * stores it in activeConnections, and logs in dev environment.
+     * 
+     * @param Connection $hyperfConnection The Hyperf Connection instance
+     * @param string $poolName The pool name for storage and logging
+     * @return ConnectionInterface The created adapter
+     */
+    private function createAndStoreAdapter(Connection $hyperfConnection, string $poolName): ConnectionInterface
+    {
+        // Create adapter wrapping the Hyperf Connection
+        $adapter = new SwooleConnectionAdapter($hyperfConnection);
+        $this->activeConnections[$poolName] = $adapter;
+        
+        // Log in dev environment
+        if (($_ENV['APP_ENV'] ?? '') === 'dev') {
+            error_log("SwooleConnection: New connection retrieved from pool: {$poolName}");
+        }
+        
+        return $adapter;
     }
 
     /**
