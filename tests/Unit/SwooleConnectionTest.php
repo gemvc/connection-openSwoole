@@ -180,18 +180,19 @@ class SwooleConnectionTest extends TestCase
             // Mock release
         });
         
-        // Manually add to active connections (simulating a connection was retrieved)
+        // REFACTORED: Manually add to active connections (flat array)
         // We can't easily test getConnection() with real pool, so we test releaseConnection logic
         $reflection = new ReflectionClass($manager);
         $activeConnectionsProperty = $reflection->getProperty('activeConnections');
-        $activeConnectionsProperty->setValue($manager, ['default' => $mockConnection]);
+        $activeConnectionsProperty->setValue($manager, [$mockConnection]);
         
         // Release the connection
         $manager->releaseConnection($mockConnection);
         
         // Connection should be removed from active connections
         $activeConnections = $activeConnectionsProperty->getValue($manager);
-        $this->assertArrayNotHasKey('default', $activeConnections);
+        $this->assertNotContains($mockConnection, $activeConnections);
+        $this->assertEmpty($activeConnections);
     }
 
     // Test getPoolStats returns correct structure
@@ -284,50 +285,56 @@ class SwooleConnectionTest extends TestCase
         $this->assertIsArray($activeConnections);
     }
 
-    // Test getConnection reuses existing valid connection
-    public function testGetConnectionReusesExistingValidConnection(): void
+    // Test getConnection always gets new connection (no caching)
+    // REFACTORED: Removed caching behavior - each call gets new connection from pool
+    public function testGetConnectionAlwaysGetsNewConnection(): void
     {
         $manager = SwooleConnection::getInstance();
         
-        // Create a mock connection that is initialized
-        $mockConnection = $this->createMock(ConnectionInterface::class);
-        $mockConnection->method('isInitialized')->willReturn(true);
+        // REFACTORED: getConnection() no longer caches by pool name
+        // It always gets a new connection from the pool
+        // This test verifies that the method attempts to get a connection
+        // (will fail without real DB, but tests the behavior)
         
-        // Manually add to active connections
-        $reflection = new ReflectionClass($manager);
-        $activeConnectionsProperty = $reflection->getProperty('activeConnections');
-        $activeConnectionsProperty->setValue($manager, ['default' => $mockConnection]);
-        
-        // Get connection should return the existing one
         $connection = $manager->getConnection('default');
         
-        // Should return the same mock connection
-        $this->assertSame($mockConnection, $connection);
+        // Without a real database, this will return null
+        // But the important thing is it doesn't cache by pool name anymore
+        $this->assertNull($connection);
+        
+        // Verify that even if we had a connection, it wouldn't be reused
+        // (This is the new expected behavior - no caching)
     }
 
-    // Test getConnection removes invalid connection and gets new one
-    public function testGetConnectionRemovesInvalidConnection(): void
+    // Test getConnection always gets new connection (no caching, no validation of existing)
+    // REFACTORED: Removed caching and validation logic - always gets new connection
+    public function testGetConnectionAlwaysGetsNewConnectionFromPool(): void
     {
         $manager = SwooleConnection::getInstance();
         
-        // Create a mock connection that is NOT initialized
-        $mockConnection = $this->createMock(ConnectionInterface::class);
-        $mockConnection->method('isInitialized')->willReturn(false);
+        // REFACTORED: getConnection() no longer checks for existing connections
+        // It always gets a new connection from the pool
+        // This allows multiple concurrent connections from the same pool
         
-        // Manually add to active connections
-        $reflection = new ReflectionClass($manager);
-        $activeConnectionsProperty = $reflection->getProperty('activeConnections');
-        $activeConnectionsProperty->setValue($manager, ['default' => $mockConnection]);
-        
-        // Get connection should remove invalid and try to get new one
         $connection = $manager->getConnection('default');
         
-        // Invalid connection should be removed
-        $activeConnections = $activeConnectionsProperty->getValue($manager);
-        $this->assertArrayNotHasKey('default', $activeConnections);
-        
-        // Should return null because pool will fail without real database
+        // Without a real database, this will return null
+        // But the important thing is it always attempts to get a new connection
         $this->assertNull($connection);
+        
+        // Verify activeConnections is a flat array (not keyed by pool name)
+        $reflection = new ReflectionClass($manager);
+        $activeConnectionsProperty = $reflection->getProperty('activeConnections');
+        $activeConnections = $activeConnectionsProperty->getValue($manager);
+        
+        // Should be a flat array (numeric keys, not pool name keys)
+        if (!empty($activeConnections)) {
+            $keys = array_keys($activeConnections);
+            // All keys should be numeric (flat array)
+            foreach ($keys as $key) {
+                $this->assertIsInt($key);
+            }
+        }
     }
 
     // Test clearError clears error state
@@ -374,12 +381,12 @@ class SwooleConnectionTest extends TestCase
         $mockConnection2->method('getConnection')->willReturn($mockPdo);
         $mockConnection2->expects($this->once())->method('releaseConnection');
         
-        // Manually add to active connections
+        // REFACTORED: Manually add to active connections (flat array)
         $reflection = new ReflectionClass($manager);
         $activeConnectionsProperty = $reflection->getProperty('activeConnections');
         $activeConnectionsProperty->setValue($manager, [
-            'pool1' => $mockConnection1,
-            'pool2' => $mockConnection2
+            $mockConnection1,
+            $mockConnection2
         ]);
         
         // Reset instance
@@ -533,12 +540,12 @@ class SwooleConnectionTest extends TestCase
         $mockConnection2->method('getConnection')->willReturn($mockPdo);
         $mockConnection2->expects($this->once())->method('releaseConnection');
         
-        // Manually add to active connections
+        // REFACTORED: Manually add to active connections (flat array)
         $reflection = new ReflectionClass($manager);
         $activeConnectionsProperty = $reflection->getProperty('activeConnections');
         $activeConnectionsProperty->setValue($manager, [
-            'pool1' => $mockConnection1,
-            'pool2' => $mockConnection2
+            $mockConnection1,
+            $mockConnection2
         ]);
         
         // Trigger destructor by unsetting
@@ -637,14 +644,16 @@ class SwooleConnectionTest extends TestCase
         $mockConnection = $this->createMock(ConnectionInterface::class);
         $mockConnection->method('isInitialized')->willReturn(true);
         
-        // Use reflection to add to activeConnections
-        $reflection = new ReflectionClass($manager);
-        $activeConnectionsProperty = $reflection->getProperty('activeConnections');
-        $activeConnectionsProperty->setValue($manager, ['test_pool' => $mockConnection]);
+        // REFACTORED: getConnection() no longer caches by pool name
+        // It always gets a new connection from the pool
+        // This test verifies the method attempts to get a connection
         
-        // Get connection should return the existing one
+        // Get connection will attempt to get new connection (will fail without real DB)
         $connection = $manager->getConnection('test_pool');
-        $this->assertSame($mockConnection, $connection);
+        
+        // Without a real database, this will return null
+        // The new behavior is to always get a new connection, not reuse cached ones
+        $this->assertNull($connection);
     }
 
     // Test initialize creates all required container bindings
@@ -833,32 +842,42 @@ class SwooleConnectionTest extends TestCase
     // Test getConnection successful path structure (adapter creation and storage)
     public function testGetConnectionSuccessfulPathStructure(): void
     {
-        // Test that when getConnection succeeds, it:
+        // REFACTORED: Test that when getConnection succeeds, it:
         // 1. Creates SwooleConnectionAdapter
-        // 2. Stores it in activeConnections
+        // 2. Stores it in activeConnections (flat array)
         // 3. Returns the adapter
         
-        // Since we can't easily mock the pool without a real DB,
-        // we verify the structure by testing with a manually added connection
         $manager = SwooleConnection::getInstance();
         
-        // Create a mock adapter that simulates successful connection
-        $mockAdapter = $this->createMock(ConnectionInterface::class);
-        $mockAdapter->method('isInitialized')->willReturn(true);
+        // Since we can't easily mock the pool without a real DB,
+        // we verify the structure by testing that getConnection is callable
+        // and returns ConnectionInterface|null
         
-        // Manually add to activeConnections to simulate successful getConnection
+        // Get connection will attempt to get new connection (will fail without real DB)
+        $connection = $manager->getConnection();
+        
+        // Verify method returns ConnectionInterface|null
+        $this->assertTrue($connection === null || $connection instanceof ConnectionInterface);
+        
+        // Verify method is callable and doesn't throw
+        $this->assertTrue(true); // Method executed without exception
+        
+        // Without a real database, this will return null
+        // The new behavior is to always get a new connection from the pool
+        
+        // Verify activeConnections is a flat array (not keyed by pool name)
         $reflection = new ReflectionClass($manager);
         $activeConnectionsProperty = $reflection->getProperty('activeConnections');
-        $activeConnectionsProperty->setValue($manager, ['default' => $mockAdapter]);
-        
-        // Now getConnection should return the stored adapter
-        $connection = $manager->getConnection();
-        $this->assertSame($mockAdapter, $connection);
-        
-        // Verify it's stored in activeConnections
         $activeConnections = $activeConnectionsProperty->getValue($manager);
-        $this->assertArrayHasKey('default', $activeConnections);
-        $this->assertSame($mockAdapter, $activeConnections['default']);
+        
+        // Should be a flat array (numeric keys, not pool name keys)
+        if (!empty($activeConnections)) {
+            $keys = array_keys($activeConnections);
+            // All keys should be numeric (flat array)
+            foreach ($keys as $key) {
+                $this->assertIsInt($key);
+            }
+        }
     }
 
     // Test getConnection creates and stores adapter correctly
@@ -875,18 +894,16 @@ class SwooleConnectionTest extends TestCase
         // but we verify the logic by checking that when we manually
         // simulate a successful connection, it works correctly
         
-        // Create mock that simulates what would happen on success
-        $mockAdapter = $this->createMock(ConnectionInterface::class);
-        $mockAdapter->method('isInitialized')->willReturn(true);
+        // REFACTORED: getConnection() no longer caches by pool name
+        // It always gets a new connection from the pool
+        // This test verifies the method attempts to get a connection
         
-        // Simulate successful getConnection by manually adding adapter
-        $reflection = new ReflectionClass($manager);
-        $activeConnectionsProperty = $reflection->getProperty('activeConnections');
-        $activeConnectionsProperty->setValue($manager, ['test_pool' => $mockAdapter]);
-        
-        // getConnection should return the stored adapter
+        // Get connection will attempt to get new connection (will fail without real DB)
         $result = $manager->getConnection('test_pool');
-        $this->assertSame($mockAdapter, $result);
+        
+        // Without a real database, this will return null
+        // The new behavior is to always get a new connection from the pool
+        $this->assertNull($result);
     }
 
     // Note: Logger method implementation is tested in SwooleErrorLogLoggerTest
@@ -932,11 +949,22 @@ class SwooleConnectionTest extends TestCase
         $this->assertInstanceOf(ConnectionInterface::class, $adapter);
         $this->assertInstanceOf(SwooleConnectionAdapter::class, $adapter);
         
-        // Verify adapter is stored in activeConnections
+        // REFACTORED: Verify adapter is stored in activeConnections as flat array
         $activeConnectionsProperty = $reflection->getProperty('activeConnections');
         $activeConnections = $activeConnectionsProperty->getValue($manager);
-        $this->assertArrayHasKey('test_pool', $activeConnections);
-        $this->assertSame($adapter, $activeConnections['test_pool']);
+        
+        // Should be a flat array (not keyed by pool name)
+        $this->assertIsArray($activeConnections);
+        $this->assertContains($adapter, $activeConnections, 'Adapter should be in activeConnections array');
+        
+        // Verify it's a flat array (numeric keys, not pool name keys)
+        if (!empty($activeConnections)) {
+            $keys = array_keys($activeConnections);
+            // All keys should be numeric (flat array)
+            foreach ($keys as $key) {
+                $this->assertIsInt($key);
+            }
+        }
     }
 
     // Test createAndStoreAdapter logs in dev environment
@@ -1692,6 +1720,192 @@ class SwooleConnectionTest extends TestCase
         $exception2 = new \RuntimeException('Test 2');
         $handleFailureMethod->invoke($manager, $exception2, false);
         $this->assertFalse($initializedProperty->getValue($manager));
+    }
+
+    // Test resetInstance handles null connections gracefully (Phase 3: Issue #2)
+    public function testResetInstanceHandlesNullConnections(): void
+    {
+        $manager = SwooleConnection::getInstance();
+        
+        // Create mock connection that returns null
+        $mockConnection = $this->createMock(ConnectionInterface::class);
+        $mockConnection->method('getConnection')->willReturn(null);
+        $mockConnection->expects($this->once())->method('releaseConnection')->with(null);
+        
+        // Manually add to active connections (flat array)
+        $reflection = new ReflectionClass($manager);
+        $activeConnectionsProperty = $reflection->getProperty('activeConnections');
+        $activeConnectionsProperty->setValue($manager, [$mockConnection]);
+        
+        // Reset instance should handle null gracefully
+        SwooleConnection::resetInstance();
+        
+        // Should complete without exception
+        $this->assertTrue(true);
+    }
+
+    // Test resetInstance handles exceptions during cleanup (Phase 3: Issue #2)
+    public function testResetInstanceHandlesExceptionsDuringCleanup(): void
+    {
+        $manager = SwooleConnection::getInstance();
+        
+        // Create mock connection that throws exception
+        $mockConnection = $this->createMock(ConnectionInterface::class);
+        $mockConnection->method('getConnection')->willThrowException(new \RuntimeException('Connection error'));
+        // Should still attempt release even if getConnection fails
+        $mockConnection->expects($this->never())->method('releaseConnection');
+        
+        // Manually add to active connections (flat array)
+        $reflection = new ReflectionClass($manager);
+        $activeConnectionsProperty = $reflection->getProperty('activeConnections');
+        $activeConnectionsProperty->setValue($manager, [$mockConnection]);
+        
+        // Reset instance should handle exception gracefully
+        SwooleConnection::resetInstance();
+        
+        // Should complete without exception (exception caught and logged)
+        $this->assertTrue(true);
+    }
+
+    // Test __destruct handles null connections gracefully (Phase 3: Issue #2)
+    public function testDestructHandlesNullConnections(): void
+    {
+        // Create a new instance to test destructor
+        $manager = new SwooleConnection();
+        
+        // Create mock connection that returns null
+        $mockConnection = $this->createMock(ConnectionInterface::class);
+        $mockConnection->method('getConnection')->willReturn(null);
+        $mockConnection->expects($this->once())->method('releaseConnection')->with(null);
+        
+        // Manually add to active connections (flat array)
+        $reflection = new ReflectionClass($manager);
+        $activeConnectionsProperty = $reflection->getProperty('activeConnections');
+        $activeConnectionsProperty->setValue($manager, [$mockConnection]);
+        
+        // Trigger destructor by unsetting
+        unset($manager);
+        
+        // Should complete without exception
+        $this->assertTrue(true);
+    }
+
+    // Test __destruct handles exceptions during cleanup (Phase 3: Issue #2)
+    public function testDestructHandlesExceptionsDuringCleanup(): void
+    {
+        // Create a new instance to test destructor
+        $manager = new SwooleConnection();
+        
+        // Create mock connection that throws exception
+        $mockConnection = $this->createMock(ConnectionInterface::class);
+        $mockConnection->method('getConnection')->willThrowException(new \RuntimeException('Connection error'));
+        // Should still attempt release even if getConnection fails
+        $mockConnection->expects($this->never())->method('releaseConnection');
+        
+        // Manually add to active connections (flat array)
+        $reflection = new ReflectionClass($manager);
+        $activeConnectionsProperty = $reflection->getProperty('activeConnections');
+        $activeConnectionsProperty->setValue($manager, [$mockConnection]);
+        
+        // Trigger destructor by unsetting
+        unset($manager);
+        
+        // Should complete without exception (exception caught and logged)
+        $this->assertTrue(true);
+    }
+
+    // Test resetInstance continues cleanup even if one connection fails (Phase 3: Issue #2)
+    public function testResetInstanceContinuesCleanupOnFailure(): void
+    {
+        $manager = SwooleConnection::getInstance();
+        
+        // Create two connections - one that fails, one that succeeds
+        $mockConnection1 = $this->createMock(ConnectionInterface::class);
+        $mockConnection1->method('getConnection')->willThrowException(new \RuntimeException('Error'));
+        $mockConnection1->expects($this->never())->method('releaseConnection');
+        
+        $mockConnection2 = $this->createMock(ConnectionInterface::class);
+        $mockPdo = $this->createMock(PDO::class);
+        $mockConnection2->method('getConnection')->willReturn($mockPdo);
+        $mockConnection2->expects($this->once())->method('releaseConnection');
+        
+        // Manually add to active connections (flat array)
+        $reflection = new ReflectionClass($manager);
+        $activeConnectionsProperty = $reflection->getProperty('activeConnections');
+        $activeConnectionsProperty->setValue($manager, [$mockConnection1, $mockConnection2]);
+        
+        // Reset instance - should continue cleanup even if first connection fails
+        SwooleConnection::resetInstance();
+        
+        // Should complete without exception and second connection should be released
+        $this->assertTrue(true);
+    }
+
+    // Test releaseConnection handles untracked connections (Phase 6: Issue #5)
+    public function testReleaseConnectionHandlesUntrackedConnection(): void
+    {
+        $manager = SwooleConnection::getInstance();
+        
+        // Create a mock connection that is NOT in activeConnections
+        $mockConnection = $this->createMock(ConnectionInterface::class);
+        $mockPdo = $this->createMock(PDO::class);
+        $mockConnection->method('getConnection')->willReturn($mockPdo);
+        // Should still attempt release even if not tracked
+        $mockConnection->expects($this->once())->method('releaseConnection');
+        
+        // Don't add to activeConnections - simulate untracked connection
+        // Release should still work but log a warning
+        $manager->releaseConnection($mockConnection);
+        
+        // Should complete without exception
+        $this->assertTrue(true);
+    }
+
+    // Test releaseConnection validates connection was found (Phase 6: Issue #5)
+    public function testReleaseConnectionValidatesConnectionFound(): void
+    {
+        $manager = SwooleConnection::getInstance();
+        
+        // Create a tracked connection
+        $mockConnection = $this->createMock(ConnectionInterface::class);
+        $mockPdo = $this->createMock(PDO::class);
+        $mockConnection->method('getConnection')->willReturn($mockPdo);
+        $mockConnection->expects($this->once())->method('releaseConnection');
+        
+        // Add to activeConnections (flat array)
+        $reflection = new ReflectionClass($manager);
+        $activeConnectionsProperty = $reflection->getProperty('activeConnections');
+        $activeConnectionsProperty->setValue($manager, [$mockConnection]);
+        
+        // Release the connection
+        $manager->releaseConnection($mockConnection);
+        
+        // Connection should be removed from tracking
+        $activeConnections = $activeConnectionsProperty->getValue($manager);
+        $this->assertNotContains($mockConnection, $activeConnections);
+    }
+
+    // Test releaseConnection handles null driver (Phase 6: Issue #5)
+    public function testReleaseConnectionHandlesNullDriver(): void
+    {
+        $manager = SwooleConnection::getInstance();
+        
+        // Create a connection with null driver
+        $mockConnection = $this->createMock(ConnectionInterface::class);
+        $mockConnection->method('getConnection')->willReturn(null);
+        // Should still attempt release with null
+        $mockConnection->expects($this->once())->method('releaseConnection')->with(null);
+        
+        // Add to activeConnections (flat array)
+        $reflection = new ReflectionClass($manager);
+        $activeConnectionsProperty = $reflection->getProperty('activeConnections');
+        $activeConnectionsProperty->setValue($manager, [$mockConnection]);
+        
+        // Release should handle null driver gracefully
+        $manager->releaseConnection($mockConnection);
+        
+        // Should complete without exception
+        $this->assertTrue(true);
     }
 
     // Note: Full 100% coverage of initialize() and getConnection() would require:

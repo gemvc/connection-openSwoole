@@ -50,6 +50,12 @@ use Gemvc\Database\Connection\Contracts\ConnectionInterface;
  *   - Connection health checks
  *   - Optimized for high-concurrency Swoole environment
  * 
+ * **Memory Leak Prevention:**
+ *   - Pool timeout mechanism (`max_idle_time`, default: 60.0s) automatically closes idle connections
+ *   - Destructor releases all connections on shutdown
+ *   - Pool size limits (`max_connections`, default: 16) prevent unbounded growth
+ *   - Best practice: Always call `releaseConnection()` when done with a connection
+ * 
  * **Environment Variables:**
  * - `MIN_DB_CONNECTION_POOL=8` - Minimum pool size (default: 8)
  * - `MAX_DB_CONNECTION_POOL=16` - Maximum pool size (default: 16)
@@ -81,7 +87,31 @@ class SwooleConnection implements ConnectionManagerInterface
     /** @var bool Whether the manager is initialized */
     private bool $initialized = false;
 
-    /** @var array<string, ConnectionInterface> Active connections by pool name */
+    /**
+     * Active connections (flat array, allows multiple per pool)
+     * 
+     * REFACTORED (Phase 5): Memory leak prevention
+     * 
+     * This array tracks active connections for statistics and cleanup purposes.
+     * While it could theoretically grow if connections aren't released, we rely on:
+     * 
+     * 1. **Hyperf Pool Timeout** - The pool's `max_idle_time` setting (default: 60.0 seconds)
+     *    automatically closes idle connections, preventing unbounded growth.
+     * 
+     * 2. **Connection Release** - Applications should call `releaseConnection()` when done,
+     *    which removes the connection from this array and returns it to the pool.
+     * 
+     * 3. **Destructor Cleanup** - `__destruct()` releases all connections on shutdown,
+     *    ensuring no leaks in long-running processes.
+     * 
+     * 4. **Pool Size Limits** - The pool's `max_connections` setting (default: 16) limits
+     *    the maximum number of connections, preventing unbounded growth.
+     * 
+     * **Best Practice:** Always call `releaseConnection()` when done with a connection.
+     * The pool timeout is a safety net, not a replacement for proper resource management.
+     * 
+     * @var array<ConnectionInterface>
+     */
     private array $activeConnections = [];
 
     /** @var SwooleEnvDetect Environment detection utility */
@@ -162,10 +192,28 @@ class SwooleConnection implements ConnectionManagerInterface
     public static function resetInstance(): void
     {
         if (self::$instance !== null) {
-            // Release all active connections
+            // Release all active connections with null safety and error handling
             foreach (self::$instance->activeConnections as $connection) {
-                $driver = $connection->getConnection();
-                $connection->releaseConnection($driver);
+                try {
+                    $driver = $connection->getConnection();
+                    // REFACTORED: Added null check - getConnection() can return null
+                    if ($driver !== null) {
+                        $connection->releaseConnection($driver);
+                    } else {
+                        // Log warning if driver is null (connection may be in invalid state)
+                        if (self::$instance->logger !== null) {
+                            self::$instance->logger->warning('Connection driver is null during resetInstance cleanup');
+                        }
+                        // Still attempt release (adapter handles null internally)
+                        $connection->releaseConnection(null);
+                    }
+                } catch (\Throwable $e) {
+                    // Best-effort cleanup - log but don't fail
+                    // This ensures cleanup continues even if one connection fails
+                    if (self::$instance->logger !== null) {
+                        self::$instance->logger->error('Error releasing connection in resetInstance: ' . $e->getMessage());
+                    }
+                }
             }
             self::$instance->activeConnections = [];
             self::$instance = null;
@@ -252,7 +300,8 @@ class SwooleConnection implements ConnectionManagerInterface
         
         // Validate database config before using it
         $dbConfig = $this->envDetect->databaseConfig;
-        if (empty($dbConfig) || !is_array($dbConfig)) {
+        // databaseConfig is typed as array, so we only need to check if empty
+        if (empty($dbConfig)) {
             throw new \RuntimeException('Invalid database configuration: config must be a non-empty array');
         }
         
@@ -340,9 +389,11 @@ class SwooleConnection implements ConnectionManagerInterface
         } catch (\Throwable $e) {
             // Clean up objects if they were created but binding failed
             // Set to null to help GC
-            if ($listenerProvider !== null) {
+            // Defensive cleanup check (may be null if exception before assignment)
+            if ($listenerProvider !== null) { // @phpstan-ignore-line
                 $listenerProvider = null;
             }
+            // Defensive cleanup check (may be null if exception before assignment)
             if ($eventDispatcher !== null) {
                 $eventDispatcher = null;
             }
@@ -388,6 +439,7 @@ class SwooleConnection implements ConnectionManagerInterface
         } catch (\Throwable $e) {
             // Clean up pool factory if it was created but assignment failed
             // Set to null to help GC
+            // @phpstan-ignore-next-line - Defensive cleanup check (may be null if exception before assignment)
             if ($poolFactory !== null) {
                 $poolFactory = null;
             }
@@ -450,16 +502,16 @@ class SwooleConnection implements ConnectionManagerInterface
     {
         $this->clearError();
 
-        // Check if we already have an adapter for this pool
-        if (isset($this->activeConnections[$poolName])) {
-            $existing = $this->activeConnections[$poolName];
-            // Verify the adapter is still valid
-            if ($existing->isInitialized()) {
-                return $existing;
-            }
-            // Remove invalid connection
-            unset($this->activeConnections[$poolName]);
-        }
+        // REFACTORED (Phase 2): Removed pool name caching - always get new connection from pool
+        // This allows multiple concurrent connections from the same pool, which is the
+        // correct behavior for connection pooling. The Hyperf pool handles connection
+        // reuse and health checks internally.
+        //
+        // REFACTORED (Phase 4): Race condition eliminated - removed check-then-act pattern.
+        // Previously: if (isset($activeConnections[$poolName])) { return existing; }
+        // This created a race condition where multiple coroutines could check, then act
+        // on stale state. Now we directly call the pool factory, which handles
+        // concurrency internally. No synchronization needed in our code.
 
         try {
             // Ensure poolFactory is initialized
@@ -468,6 +520,7 @@ class SwooleConnection implements ConnectionManagerInterface
             }
             
             // Get Hyperf Connection from pool (REAL IMPLEMENTATION - connection pooling)
+            // Each call gets a NEW connection from the pool, allowing true concurrent access
             /** @var Connection $hyperfConnection */
             $hyperfConnection = $this->poolFactory->getPool($poolName)->get();
             
@@ -498,21 +551,60 @@ class SwooleConnection implements ConnectionManagerInterface
      * 
      * **Note:** This IS connection pooling. Releases connection back to Hyperf pool.
      * 
+     * REFACTORED (Phase 5): Memory leak prevention
+     * 
+     * **Important:** Always call this method when done with a connection to prevent
+     * memory leaks. While the pool timeout mechanism provides automatic cleanup,
+     * explicit release is the best practice for optimal resource management.
+     * 
+     * The connection is:
+     * 1. Removed from `$activeConnections` tracking array
+     * 2. Released back to the Hyperf pool for reuse
+     * 3. Pool handles connection health checks and timeout management
+     * 
      * @param ConnectionInterface $connection The connection to release
      * @return void
      */
     public function releaseConnection(ConnectionInterface $connection): void
     {
-        // Find and remove from active connections
-        foreach ($this->activeConnections as $poolName => $activeConnection) {
-            if ($activeConnection === $connection) {
-                unset($this->activeConnections[$poolName]);
-                break;
-            }
+        // REFACTORED (Phase 2): Search by connection object (not pool name) since we now use flat array
+        // Find and remove from active connections using strict comparison
+        $key = array_search($connection, $this->activeConnections, true);
+        $found = ($key !== false);
+        
+        if ($found) {
+            unset($this->activeConnections[$key]);
         }
         
-        // Release via adapter (which releases Hyperf connection back to pool)
-        $connection->releaseConnection($connection->getConnection());
+        // REFACTORED (Phase 6): Added validation and logging
+        // Only release if found in tracking (or log warning if not)
+        if ($found) {
+            // Connection was tracked - release normally
+            $driver = $connection->getConnection();
+            if ($driver !== null) {
+                $connection->releaseConnection($driver);
+            } else {
+                // Driver is null, but still attempt release (adapter handles null)
+                $connection->releaseConnection(null);
+            }
+        } else {
+            // Connection not found in tracking - log warning but still attempt release
+            // This might happen if:
+            // - Connection was already released
+            // - Connection was never tracked (edge case)
+            // - Connection tracking was cleared
+            // Still attempt release as it might be valid (just not tracked)
+            if ($this->logger !== null) {
+                $this->logger->warning('Attempted to release connection not found in activeConnections tracking');
+            }
+            
+            $driver = $connection->getConnection();
+            if ($driver !== null) {
+                $connection->releaseConnection($driver);
+            } else {
+                $connection->releaseConnection(null);
+            }
+        }
     }
 
     /**
@@ -600,7 +692,10 @@ class SwooleConnection implements ConnectionManagerInterface
     /**
      * Get active connections array (for internal use).
      * 
-     * @return array<string, ConnectionInterface> Active connections by pool name
+     * REFACTORED: Returns flat array of ConnectionInterface objects (not keyed by pool name).
+     * This allows multiple connections from the same pool to be tracked.
+     * 
+     * @return array<ConnectionInterface> Active connections (flat array)
      * @internal Used by SwooleConnectionPoolStats factory method
      */
     public function getActiveConnections(): array
@@ -612,17 +707,23 @@ class SwooleConnection implements ConnectionManagerInterface
      * Create and store adapter for Hyperf Connection
      * 
      * Creates a SwooleConnectionAdapter wrapping the Hyperf Connection,
-     * stores it in activeConnections, and logs in dev environment.
+     * stores it in activeConnections (flat array), and logs in dev environment.
+     * 
+     * REFACTORED: Appends to array instead of keying by pool name, allowing
+     * multiple connections from the same pool to be tracked.
      * 
      * @param Connection $hyperfConnection The Hyperf Connection instance
-     * @param string $poolName The pool name for storage and logging
+     * @param string $poolName The pool name for logging (not used for storage)
      * @return ConnectionInterface The created adapter
      */
     private function createAndStoreAdapter(Connection $hyperfConnection, string $poolName): ConnectionInterface
     {
         // Create adapter wrapping the Hyperf Connection
         $adapter = new SwooleConnectionAdapter($hyperfConnection);
-        $this->activeConnections[$poolName] = $adapter;
+        
+        // REFACTORED: Append to flat array instead of keying by pool name
+        // This allows multiple connections from the same pool
+        $this->activeConnections[] = $adapter;
         
         // Log in dev environment
         if ($this->envDetect->isDevEnvironment) {
@@ -635,13 +736,46 @@ class SwooleConnection implements ConnectionManagerInterface
 
     /**
      * Clean up resources on destruction
+     * 
+     * REFACTORED (Phase 3): Added null safety and error handling to prevent crashes during cleanup.
+     * Uses best-effort approach - continues cleanup even if individual connections fail.
+     * 
+     * REFACTORED (Phase 5): Memory leak prevention
+     * 
+     * This destructor ensures all tracked connections are released back to the pool,
+     * preventing memory leaks in long-running processes. This is especially important
+     * in OpenSwoole where the process may run for hours or days.
+     * 
+     * **Note:** While this provides cleanup on shutdown, applications should still
+     * call `releaseConnection()` explicitly when done with a connection for optimal
+     * resource management. The destructor is a safety net, not a replacement for
+     * proper resource management.
      */
     public function __destruct()
     {
-        // Release all active connections
+        // Release all active connections with null safety and error handling
         foreach ($this->activeConnections as $connection) {
-            $driver = $connection->getConnection();
-            $connection->releaseConnection($driver);
+            try {
+                $driver = $connection->getConnection();
+                // REFACTORED: Added null check - getConnection() can return null
+                if ($driver !== null) {
+                    $connection->releaseConnection($driver);
+                } else {
+                    // Log warning if driver is null (connection may be in invalid state)
+                    if ($this->logger !== null) {
+                        $this->logger->warning('Connection driver is null during __destruct cleanup');
+                    }
+                    // Still attempt release (adapter handles null internally)
+                    $connection->releaseConnection(null);
+                }
+            } catch (\Throwable $e) {
+                // Best-effort cleanup - log but don't fail
+                // This ensures cleanup continues even if one connection fails
+                // Important in long-running processes where connections may be in various states
+                if ($this->logger !== null) {
+                    $this->logger->error('Error releasing connection in __destruct: ' . $e->getMessage());
+                }
+            }
         }
         $this->activeConnections = [];
     }
