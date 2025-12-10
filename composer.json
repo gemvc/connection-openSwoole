@@ -1,6 +1,6 @@
 {
     "name": "gemvc/connection-openswoole",
-    "description": "OpenSwoole connection adapter for GEMVC framework",
+    "description": "OpenSwoole connection pooling for GEMVC framework",
     "type": "library",
     "license": "MIT",
     "keywords": [
@@ -52,7 +52,9 @@
         "exclude": [
             "/tests",
             "/.github",
-            "/.phpunit.cache"
+            "/.phpunit.cache",
+            "/coverage-report",
+            "/vendor"
         ]
     },
     "minimum-stability": "dev",
