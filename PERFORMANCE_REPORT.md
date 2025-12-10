@@ -1,3 +1,6 @@
+
+![openswoole-connection-poot](https://github.com/user-attachments/assets/a90c56eb-407d-44cb-8deb-6fcfcaf33e22)
+
 # Performance Report: gemvc/connection-openswoole
 
 **Report Date:** December 10, 2025  
