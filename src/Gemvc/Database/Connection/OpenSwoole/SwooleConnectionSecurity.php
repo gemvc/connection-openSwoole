@@ -47,6 +47,11 @@ class SwooleConnectionSecurity
         // Remove all characters except alphanumeric, underscore, hyphen
         $sanitized = preg_replace('/[^a-zA-Z0-9_-]/', '', $poolName);
         
+        // Handle preg_replace returning null (shouldn't happen with valid input, but PHPStan requires it)
+        if ($sanitized === null) {
+            return 'default';
+        }
+        
         // If empty after sanitization, return default
         if ($sanitized === '') {
             return 'default';
@@ -142,13 +147,21 @@ class SwooleConnectionSecurity
         }
         
         // Remove common password patterns
-        $sanitized = preg_replace('/password\s*[=:]\s*[^\s;]+/i', 'password=***', $sanitized);
-        $sanitized = preg_replace('/pwd\s*[=:]\s*[^\s;]+/i', 'pwd=***', $sanitized);
-        $sanitized = preg_replace('/pass\s*[=:]\s*[^\s;]+/i', 'pass=***', $sanitized);
+        $result = preg_replace('/password\s*[=:]\s*[^\s;]+/i', 'password=***', $sanitized);
+        $sanitized = $result ?? $sanitized;
+        
+        $result = preg_replace('/pwd\s*[=:]\s*[^\s;]+/i', 'pwd=***', $sanitized);
+        $sanitized = $result ?? $sanitized;
+        
+        $result = preg_replace('/pass\s*[=:]\s*[^\s;]+/i', 'pass=***', $sanitized);
+        $sanitized = $result ?? $sanitized;
         
         // Remove full connection string patterns
-        $sanitized = preg_replace('/mysql:[^;]+password[^;]+/i', 'mysql:***', $sanitized);
-        $sanitized = preg_replace('/pgsql:[^;]+password[^;]+/i', 'pgsql:***', $sanitized);
+        $result = preg_replace('/mysql:[^;]+password[^;]+/i', 'mysql:***', $sanitized);
+        $sanitized = $result ?? $sanitized;
+        
+        $result = preg_replace('/pgsql:[^;]+password[^;]+/i', 'pgsql:***', $sanitized);
+        $sanitized = $result ?? $sanitized;
         
         return $sanitized;
     }
