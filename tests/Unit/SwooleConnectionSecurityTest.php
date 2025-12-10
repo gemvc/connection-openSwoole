@@ -43,6 +43,20 @@ class SwooleConnectionSecurityTest extends TestCase
         $this->assertEquals('default', SwooleConnectionSecurity::sanitizePoolName('---'));
         $this->assertEquals('poolscriptalert1script', SwooleConnectionSecurity::sanitizePoolName('pool<script>alert(1)</script>'));
         
+        // Test lines 51-53: Empty string after sanitization should return default
+        $this->assertEquals('default', SwooleConnectionSecurity::sanitizePoolName(''), 'Empty string should return default');
+        $this->assertEquals('default', SwooleConnectionSecurity::sanitizePoolName('@#$'), 'Only special chars that get removed should return default');
+        $this->assertEquals('default', SwooleConnectionSecurity::sanitizePoolName('!@#$%^&*()'), 'Only special chars should return default');
+        $this->assertEquals('default', SwooleConnectionSecurity::sanitizePoolName('   '), 'Only spaces should return default');
+        $this->assertEquals('default', SwooleConnectionSecurity::sanitizePoolName('.;[]{}'), 'Only punctuation should return default');
+        
+        // Test lines 56-58: Only underscores and hyphens (no alphanumeric) should return default
+        $this->assertEquals('default', SwooleConnectionSecurity::sanitizePoolName('___'), 'Only underscores should return default');
+        $this->assertEquals('default', SwooleConnectionSecurity::sanitizePoolName('---'), 'Only hyphens should return default');
+        $this->assertEquals('default', SwooleConnectionSecurity::sanitizePoolName('___---'), 'Mix of underscores and hyphens should return default');
+        $this->assertEquals('default', SwooleConnectionSecurity::sanitizePoolName('_-_'), 'Alternating underscores and hyphens should return default');
+        $this->assertEquals('default', SwooleConnectionSecurity::sanitizePoolName('@#$___'), 'Special chars + underscores should return default after sanitization');
+        
         // Test length limit
         $longName = str_repeat('a', 100);
         $this->assertEquals(str_repeat('a', 64), SwooleConnectionSecurity::sanitizePoolName($longName));

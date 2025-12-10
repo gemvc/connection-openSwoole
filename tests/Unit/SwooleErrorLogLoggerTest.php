@@ -515,6 +515,39 @@ class SwooleErrorLogLoggerTest extends TestCase
         unlink($tempFile);
     }
 
+    // Test handleException with contextData containing password (covers line 136)
+    public function testHandleExceptionWithPasswordInContextData(): void
+    {
+        $exception = new \RuntimeException('Connection failed', 123);
+        $contextData = [
+            'pool' => 'default',
+            'worker_pid' => 12345,
+            'password' => 'sensitive_password_123', // This should be masked
+            'timestamp' => '2024-01-01 12:00:00',
+            'error_code' => 123
+        ];
+        $tempFile = sys_get_temp_dir() . '/test_error_log_' . uniqid() . '.log';
+        
+        ini_set('error_log', $tempFile);
+        
+        $this->logger->handleException($exception, 'SwooleConnection::getConnection()', 'error', $contextData);
+        
+        $this->assertFileExists($tempFile);
+        $content = file_get_contents($tempFile);
+        $this->assertStringContainsString('[ERROR]', $content);
+        $this->assertStringContainsString('SwooleConnection::getConnection()', $content);
+        $this->assertStringContainsString('RuntimeException', $content);
+        $this->assertStringContainsString('Connection failed', $content);
+        $this->assertStringContainsString('[Context:', $content);
+        $this->assertStringContainsString('"pool":"default"', $content);
+        $this->assertStringContainsString('"worker_pid":12345', $content);
+        // Verify password is masked (line 136 coverage)
+        $this->assertStringContainsString('"password":"***"', $content);
+        $this->assertStringNotContainsString('sensitive_password_123', $content);
+        
+        unlink($tempFile);
+    }
+
     // Test handleException with empty contextData (backward compatibility)
     public function testHandleExceptionWithEmptyContextData(): void
     {
