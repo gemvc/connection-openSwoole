@@ -1,3 +1,6 @@
+
+![openswoole-connection-poot](https://github.com/user-attachments/assets/146e892d-6fa6-4c16-a06e-f1836c761314)
+
 # Library Assessment: gemvc/connection-openswoole
 
 **Assessment Date:** December 10, 2025  
