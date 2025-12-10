@@ -258,7 +258,7 @@ The `SwooleConnection` class has undergone comprehensive refactoring to fix crit
 
 ### Refactoring Metrics
 
-- **Tests:** 195 tests, 563 assertions (up from 187 tests)
+- **Tests:** 237 tests, 748 assertions (210 unit + 27 integration)
 - **PHPStan:** Level 9 passes (no errors)
 - **Breaking Changes:** Zero - 100% backward compatible
 - **Issues Fixed:** All 5 critical issues resolved
@@ -275,29 +275,52 @@ vendor/bin/phpstan analyse --level 9
 
 ### Test Results
 
-- ✅ **195 tests** passing (563 assertions)
+- ✅ **237 tests** passing (748 assertions)
 - ✅ **PHPStan Level 9** passes (no errors)
-- ✅ **100% code coverage** for all classes
+- ✅ **96.98% code coverage** (353/364 lines)
 - ✅ **No breaking changes** - all refactoring maintains backward compatibility
 
 ### Test Coverage
 
 The package includes comprehensive test coverage:
 
-- **Overall Coverage:** 100.00% lines, 100.00% methods
-- **SwooleConnection:** 100.00% lines, 100.00% methods
+- **Overall Coverage:** 96.98% lines (353/364), 95.24% methods (80/84)
+- **SwooleConnection:** 90.98% lines (111/122), 80.00% methods (16/20)
 - **SwooleConnectionAdapter:** 100.00% lines, 100.00% methods
-- **Total Tests:** 195 tests, 563 assertions
+- **SwooleErrorLogLogger:** 100.00% lines, 100.00% methods
+- **Total Tests:** 237 tests (210 unit + 27 integration), 748 assertions
 - **PHPStan:** Level 9 passes (no errors)
 - **Status:** All tests passing ✅
 
-### Test Classes
+### Test Suites
 
-- **SwooleConnectionTest** - Unit tests for `SwooleConnection` (isolated testing)
-- **SwooleConnectionClassTest** - Comprehensive test class covering all methods
-- **SwooleConnectionIntegrationTest** - Integration tests with real database operations
+#### Unit Tests (210 tests)
+- **SwooleConnectionTest** - Unit tests for `SwooleConnection` (isolated testing with mocks)
 - **SwooleConnectionAdapterTest** - Unit tests for `SwooleConnectionAdapter`
-- **SwooleConnectionAdapterIntegrationTest** - Integration tests for adapter
+- **SwooleErrorLogLoggerTest** - Unit tests for `SwooleErrorLogLogger`
+- **SwooleEnvDetectTest** - Unit tests for `SwooleEnvDetect`
+- **DatabaseConfigTest** - Unit tests for `DatabaseConfig`
+- **PoolConfigTest** - Unit tests for `PoolConfig`
+- **SwooleConnectionPoolStatsTest** - Unit tests for `SwooleConnectionPoolStats`
+
+#### Integration Tests (27 tests)
+- **SwooleConnectionIntegrationTest** - Integration tests for component interactions (14 tests)
+  - Complete initialization flow
+  - Singleton behavior
+  - Connection lifecycle
+  - Multiple connections and pools
+  - Error handling scenarios
+  - Reset and cleanup
+  - Pool statistics
+  
+- **SwooleConnectionUsageIntegrationTest** - Integration tests demonstrating real-world usage patterns (13 tests)
+  - Service class integration
+  - Repository pattern usage
+  - Dependency injection patterns
+  - Transaction handling
+  - Error handling strategies
+  - Resource cleanup patterns
+  - Multiple pool usage
 
 ### Generating Coverage Report
 
