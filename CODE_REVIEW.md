@@ -1,3 +1,6 @@
+
+![openswoole-connection-poot](https://github.com/user-attachments/assets/d9d69be7-8bab-4703-970b-279bc82671a9)
+
 # Code Review: gemvc/connection-openswoole
 
 **Review Date:** December 10, 2025  
