@@ -89,8 +89,6 @@ class SwooleConnection implements ConnectionManagerInterface
         if (self::$instance === null) {
             self::$instance = new self();
         } else {
-            // Debug: Confirm singleton is being reused
-            // Use envDetect property instead of direct $_ENV access for consistency
             if (self::$instance->envDetect->isDevEnvironment) {
                 $logger = self::$instance->logger ?? new SwooleErrorLogLogger();
                 $logger->info("SwooleConnection: Reusing existing pool [Worker PID: " . getmypid() . "]");
@@ -134,7 +132,7 @@ class SwooleConnection implements ConnectionManagerInterface
     private function initialize(): void
     {
         $containerCreated = false;
-        
+
         try {
             $this->initializeLogger();
             $this->initializeContainer();
@@ -155,7 +153,7 @@ class SwooleConnection implements ConnectionManagerInterface
     private function initializeLogger(): void
     {
         $this->logger = new SwooleErrorLogLogger();
-        
+
         if ($this->envDetect->isDevEnvironment) {
             $this->logger->info("SwooleConnection: Creating new connection pool [Worker PID: " . getmypid() . "]");
         }
@@ -172,12 +170,12 @@ class SwooleConnection implements ConnectionManagerInterface
         if ($this->logger === null) {
             throw new \RuntimeException('Logger must be initialized before container');
         }
-        
+
         $dbConfig = $this->envDetect->databaseConfig;
         if (empty($dbConfig)) {
             throw new \RuntimeException('Invalid database configuration: config must be a non-empty array');
         }
-        
+
         $container = null;
         try {
             $container = new Container(new DefinitionSource([]));
@@ -209,9 +207,7 @@ class SwooleConnection implements ConnectionManagerInterface
         if ($this->container === null) {
             throw new \RuntimeException('Container must be initialized before event dispatcher');
         }
-        
-        $listenerProvider = null;
-        $eventDispatcher = null;
+
         try {
             $listenerProvider = new ListenerProvider();
             $logger = $this->container->get(StdoutLoggerInterface::class);
@@ -219,17 +215,11 @@ class SwooleConnection implements ConnectionManagerInterface
             if ($logger === null) {
                 throw new \RuntimeException('Logger not found in container after binding');
             }
-            
+
             $eventDispatcher = new EventDispatcher($listenerProvider, $logger);
             $this->container->set(\Psr\EventDispatcher\ListenerProviderInterface::class, $listenerProvider);
             $this->container->set(\Psr\EventDispatcher\EventDispatcherInterface::class, $eventDispatcher);
         } catch (\Throwable $e) {
-            if ($listenerProvider !== null) { // @phpstan-ignore-line
-                $listenerProvider = null;
-            }
-            if ($eventDispatcher !== null) {
-                $eventDispatcher = null;
-            }
             throw new \RuntimeException(
                 'Failed to initialize event dispatcher: ' . $e->getMessage(),
                 0,
@@ -248,15 +238,14 @@ class SwooleConnection implements ConnectionManagerInterface
         if ($this->container === null) {
             throw new \RuntimeException('Container must be initialized before pool factory');
         }
-        
-        $poolFactory = null;
+        if ($this->poolFactory) {
+            $this->poolFactory = null;
+        }
+
         try {
-            $poolFactory = new PoolFactory($this->container);
-            $this->poolFactory = $poolFactory;
+            $this->poolFactory = new PoolFactory($this->container);
         } catch (\Throwable $e) {
-            if ($poolFactory !== null) { // @phpstan-ignore-line
-                $poolFactory = null;
-            }
+            $this->poolFactory = null;
             throw new \RuntimeException(
                 'Failed to initialize pool factory: ' . $e->getMessage(),
                 0,
@@ -272,12 +261,9 @@ class SwooleConnection implements ConnectionManagerInterface
      */
     private function handleInitializationFailure(\Throwable $e, bool $containerCreated): void
     {
-        // Clean up partially initialized state
         if ($containerCreated) {
-            // Set to null to allow GC to clean up (container holds references)
             $this->container = null;
-        }       
-        // Set error state (logger might be null if exception occurred very early)
+        }
         $errorMessage = 'Failed to initialize SwooleConnection: ' . $e->getMessage();
         if ($this->logger !== null) {
             $this->logger->error($errorMessage);
@@ -303,7 +289,7 @@ class SwooleConnection implements ConnectionManagerInterface
             if ($this->poolFactory === null) {
                 throw new \RuntimeException('Connection pool factory not initialized');
             }
-            
+
             /** @var Connection $hyperfConnection */
             $hyperfConnection = $this->poolFactory->getPool($poolName)->get();
             return $this->createAndStoreAdapter($hyperfConnection, $poolName);
@@ -333,18 +319,18 @@ class SwooleConnection implements ConnectionManagerInterface
     {
         $key = array_search($connection, $this->activeConnections, true);
         $found = ($key !== false);
-        
+
         if ($found) {
             unset($this->activeConnections[$key]);
         }
-        
+
         $driver = $connection->getConnection();
         if ($driver !== null) {
             $connection->releaseConnection($driver);
         } else {
             $connection->releaseConnection(null);
         }
-        
+
         if (!$found && $this->logger !== null) {
             $this->logger->warning('Attempted to release connection not found in activeConnections tracking');
         }
@@ -374,7 +360,6 @@ class SwooleConnection implements ConnectionManagerInterface
             return;
         }
 
-        // Add context information to error message
         if (!empty($context)) {
             $contextStr = ' [Context: ' . json_encode($context) . ']';
             $this->error = $error . $contextStr;
@@ -444,15 +429,14 @@ class SwooleConnection implements ConnectionManagerInterface
      */
     private function createAndStoreAdapter(Connection $hyperfConnection, string $poolName): ConnectionInterface
     {
-        // Create adapter wrapping the Hyperf Connection
         $adapter = new SwooleConnectionAdapter($hyperfConnection);
         $this->activeConnections[] = $adapter;
-        
+
         if ($this->envDetect->isDevEnvironment) {
             $logger = $this->logger ?? new SwooleErrorLogLogger();
             $logger->info("SwooleConnection: New connection retrieved from pool: {$poolName}");
         }
-        
+
         return $adapter;
     }
 
