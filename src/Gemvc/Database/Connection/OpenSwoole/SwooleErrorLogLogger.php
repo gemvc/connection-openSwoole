@@ -109,5 +109,87 @@ class SwooleErrorLogLogger implements StdoutLoggerInterface
         $levelStr = is_string($level) ? $level : 'UNKNOWN';
         error_log("[" . $levelStr . "] " . (string) $message);
     }
+
+    /**
+     * Handle and log an exception with context
+     * 
+     * Provides a standardized way to log exceptions with full details including
+     * exception class, message, code, file, and line number. This method is
+     * designed specifically for SwooleConnection exception handling.
+     * 
+     * @param \Throwable $e The exception to handle
+     * @param string $context Additional context description (e.g., "Error releasing connection in resetInstance")
+     * @param string $logLevel Log level: 'error', 'critical', 'warning' (default: 'error')
+     * @param array<string, mixed> $contextData Additional context data (e.g., ['pool' => 'default', 'worker_pid' => 123])
+     * @return void
+     */
+    public function handleException(\Throwable $e, string $context = '', string $logLevel = 'error', array $contextData = []): void
+    {
+        $contextStr = $context !== '' ? "$context: " : '';
+        
+        // Format context data if provided
+        $contextDataStr = '';
+        if (!empty($contextData)) {
+            $contextDataStr = ' [Context: ' . json_encode($contextData) . ']';
+        }
+        
+        $message = sprintf(
+            '%s%s (%d): %s [File: %s:%d]%s',
+            $contextStr,
+            get_class($e),
+            $e->getCode(),
+            $e->getMessage(),
+            $e->getFile(),
+            $e->getLine(),
+            $contextDataStr
+        );
+        
+        match($logLevel) {
+            'critical' => $this->critical($message),
+            'warning' => $this->warning($message),
+            default => $this->error($message),
+        };
+    }
+
+    /**
+     * Handle and log a warning message with context
+     * 
+     * Provides a standardized way to log warnings with optional context.
+     * This method is designed specifically for SwooleConnection warning handling.
+     * 
+     * @param string $message The warning message to log
+     * @param string $context Additional context description (optional)
+     * @return void
+     */
+    public function handleWarning(string $message, string $context = ''): void
+    {
+        $logMessage = $context !== '' ? "$context: $message" : $message;
+        $this->warning($logMessage);
+    }
+
+    /**
+     * Handle exception by logging it and then throwing a wrapped RuntimeException
+     * 
+     * This method logs the exception with full details and then throws a new
+     * RuntimeException that wraps the original exception. Useful for initialization
+     * failures where we want both logging and exception propagation.
+     * 
+     * @param \Throwable $e The exception to handle
+     * @param string $component The component name that failed (e.g., "container", "event dispatcher")
+     * @param string $context Additional context description (optional)
+     * @return never
+     * @throws \RuntimeException Always throws a wrapped RuntimeException
+     */
+    public function logAndThrowException(\Throwable $e, string $component, string $context = ''): never
+    {
+        $logContext = $context !== '' ? "$context: " : '';
+        $this->handleException($e, $logContext . "Failed to initialize $component");
+        
+        throw new \RuntimeException(
+            "Failed to initialize $component: " . $e->getMessage(),
+            0,
+            $e
+        );
+    }
 }
 

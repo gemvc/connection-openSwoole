@@ -28,18 +28,23 @@ class SwooleEnvDetectTest extends TestCase
         // If SWOOLE_BASE is defined, should return true
         if (defined('SWOOLE_BASE')) {
             $this->assertTrue($this->envDetect->isOpenSwooleServer());
+            return; // Early return after assertion
         }
         
         // If OpenSwoole\Server class exists, should return true
         if (class_exists('\OpenSwoole\Server')) {
             $this->assertTrue($this->envDetect->isOpenSwooleServer());
+            return; // Early return after assertion
         }
         
-        // Test that it returns false when not in CLI
-        // We can't easily test this without changing PHP_SAPI, but we verify the logic
+        // If neither condition is met, verify it returns false (when in CLI)
         // The method checks: PHP_SAPI === 'cli' && (defined('SWOOLE_BASE') || class_exists('\OpenSwoole\Server'))
-        // So if we're in CLI but neither condition is true, it should return false
-        // This is already tested implicitly by isCliContext()
+        if (PHP_SAPI === 'cli') {
+            $this->assertFalse($this->envDetect->isOpenSwooleServer());
+        } else {
+            // Not in CLI, so should also return false
+            $this->assertFalse($this->envDetect->isOpenSwooleServer());
+        }
     }
     
     // Test isOpenSwooleServer returns false when conditions not met
@@ -68,6 +73,15 @@ class SwooleEnvDetectTest extends TestCase
         // When in OpenSwoole server context, should return false
         if ($this->envDetect->isOpenSwooleServer()) {
             $this->assertFalse($this->envDetect->isCliContext());
+        } else {
+            // When not in OpenSwoole server and not in CLI, should return false
+            if (PHP_SAPI !== 'cli') {
+                $this->assertFalse($this->envDetect->isCliContext());
+            } else {
+                // In CLI but not OpenSwoole, should return true (not false)
+                // So we verify the opposite: if we're in CLI and not OpenSwoole, isCliContext should be true
+                $this->assertTrue($this->envDetect->isCliContext());
+            }
         }
     }
 
@@ -76,6 +90,9 @@ class SwooleEnvDetectTest extends TestCase
     {
         if (PHP_SAPI !== 'cli') {
             $this->assertTrue($this->envDetect->isWebServerContext());
+        } else {
+            // When in CLI, should return false
+            $this->assertFalse($this->envDetect->isWebServerContext());
         }
     }
     
@@ -140,6 +157,10 @@ class SwooleEnvDetectTest extends TestCase
             unset($_ENV['DB_HOST']);
             $envDetect = new SwooleEnvDetect();
             $this->assertEquals('db', $envDetect->dbHost);
+        } else {
+            // When not in OpenSwoole context, verify dbHost is still accessible
+            $this->assertIsString($this->envDetect->dbHost);
+            $this->assertNotEmpty($this->envDetect->dbHost);
         }
     }
 
@@ -170,6 +191,10 @@ class SwooleEnvDetectTest extends TestCase
             unset($_ENV['DB_HOST']);
             $envDetect = new SwooleEnvDetect();
             $this->assertEquals('db', $envDetect->dbHost);
+        } else {
+            // When not in web server context, verify dbHost is still accessible
+            $this->assertIsString($this->envDetect->dbHost);
+            $this->assertNotEmpty($this->envDetect->dbHost);
         }
     }
 

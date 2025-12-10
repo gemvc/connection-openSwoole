@@ -114,9 +114,7 @@ class SwooleConnection implements ConnectionManagerInterface
                         $connection->releaseConnection(null);
                     }
                 } catch (\Throwable $e) {
-                    if (self::$instance->logger !== null) {
-                        self::$instance->logger->error('Error releasing connection in resetInstance: ' . $e->getMessage());
-                    }
+                    (self::$instance->logger ?? new SwooleErrorLogLogger())->handleException($e, 'Error releasing connection in resetInstance');
                 }
             }
             self::$instance->activeConnections = [];
@@ -175,24 +173,18 @@ class SwooleConnection implements ConnectionManagerInterface
         if (empty($dbConfig)) {
             throw new \RuntimeException('Invalid database configuration: config must be a non-empty array');
         }
+        if ($this->container) {
+            $this->container = null;
+        }   
 
-        $container = null;
         try {
-            $container = new Container(new DefinitionSource([]));
-            $config = new Config(['databases' => $dbConfig]);
-            $container->set(\Hyperf\Contract\ConfigInterface::class, $config);
-            $container->set(ContainerInterface::class, $container);
-            $container->set(StdoutLoggerInterface::class, $this->logger);
-            $this->container = $container;
+            $this->container = new Container(new DefinitionSource([]));
+            $this->container->set(\Hyperf\Contract\ConfigInterface::class,  new Config(['databases' => $dbConfig]));
+            $this->container->set(ContainerInterface::class, $this->container);
+            $this->container->set(StdoutLoggerInterface::class, $this->logger);
         } catch (\Throwable $e) {
-            if ($container !== null) {
-                $container = null;
-            }
-            throw new \RuntimeException(
-                'Failed to initialize container: ' . $e->getMessage(),
-                0,
-                $e
-            );
+            $this->container = null;
+            $this->logger->logAndThrowException($e, 'container');
         }
     }
 
@@ -220,11 +212,7 @@ class SwooleConnection implements ConnectionManagerInterface
             $this->container->set(\Psr\EventDispatcher\ListenerProviderInterface::class, $listenerProvider);
             $this->container->set(\Psr\EventDispatcher\EventDispatcherInterface::class, $eventDispatcher);
         } catch (\Throwable $e) {
-            throw new \RuntimeException(
-                'Failed to initialize event dispatcher: ' . $e->getMessage(),
-                0,
-                $e
-            );
+            ($this->logger ?? new SwooleErrorLogLogger())->logAndThrowException($e, 'event dispatcher');
         }
     }
 
@@ -246,11 +234,7 @@ class SwooleConnection implements ConnectionManagerInterface
             $this->poolFactory = new PoolFactory($this->container);
         } catch (\Throwable $e) {
             $this->poolFactory = null;
-            throw new \RuntimeException(
-                'Failed to initialize pool factory: ' . $e->getMessage(),
-                0,
-                $e
-            );
+            ($this->logger ?? new SwooleErrorLogLogger())->logAndThrowException($e, 'pool factory');
         }
     }
 
@@ -265,9 +249,7 @@ class SwooleConnection implements ConnectionManagerInterface
             $this->container = null;
         }
         $errorMessage = 'Failed to initialize SwooleConnection: ' . $e->getMessage();
-        if ($this->logger !== null) {
-            $this->logger->error($errorMessage);
-        }
+        ($this->logger ?? new SwooleErrorLogLogger())->handleException($e, 'Failed to initialize SwooleConnection');
         $this->setError($errorMessage);
         $this->initialized = false;
     }
@@ -301,8 +283,7 @@ class SwooleConnection implements ConnectionManagerInterface
                 'error_code' => $e->getCode()
             ];
             $this->setError('Failed to get database connection: ' . $e->getMessage(), $context);
-            $logger = $this->logger ?? new SwooleErrorLogLogger();
-            $logger->error("SwooleConnection::getConnection() - Error: " . $e->getMessage() . " [Pool: $poolName]");
+            ($this->logger ?? new SwooleErrorLogLogger())->handleException($e, "SwooleConnection::getConnection() [Pool: $poolName]", 'error', $context);
             return null;
         }
     }
@@ -331,8 +312,8 @@ class SwooleConnection implements ConnectionManagerInterface
             $connection->releaseConnection(null);
         }
 
-        if (!$found && $this->logger !== null) {
-            $this->logger->warning('Attempted to release connection not found in activeConnections tracking');
+        if (!$found) {
+            ($this->logger ?? new SwooleErrorLogLogger())->handleWarning('Attempted to release connection not found in activeConnections tracking');
         }
     }
 
@@ -457,9 +438,7 @@ class SwooleConnection implements ConnectionManagerInterface
                     $connection->releaseConnection(null);
                 }
             } catch (\Throwable $e) {
-                if ($this->logger !== null) {
-                    $this->logger->error('Error releasing connection in __destruct: ' . $e->getMessage());
-                }
+                ($this->logger ?? new SwooleErrorLogLogger())->handleException($e, 'Error releasing connection in __destruct');
             }
         }
         $this->activeConnections = [];
