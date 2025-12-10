@@ -40,22 +40,23 @@ It's designed for OpenSwoole environments where connections are shared across re
 
 ## Features
 
-- ✅ **Real Implementation:** Creates actual connection pools using Hyperf (`SwooleConnection`)
-- ✅ **Adapter:** Wraps Hyperf Connection instances for contracts (`SwooleConnectionAdapter`)
-- ✅ **True Connection Pooling:** Hyperf-based connection pooling (not simple caching)
-- ✅ **Multiple Connections Per Pool:** Supports concurrent connections from the same pool
-- ✅ **Pool Management:** Min/max connections, idle timeout, health checks
-- ✅ **Multi-Driver Support:** MySQL (default), PostgreSQL, and other PDO drivers
-- ✅ **MySQL Optimizations:** Charset/collation setup, buffered queries, strict SQL mode
-- ✅ **Null Safety:** Comprehensive null checks in cleanup methods
-- ✅ **Validation:** Connection tracking validation with logging
-- ✅ **Memory Leak Prevention:** Multi-layered protection (pool timeout, destructor, size limits)
-- ✅ **Concurrency Safe:** No race conditions, thread-safe operations
-- ✅ Transaction support (begin, commit, rollback)
-- ✅ Error handling
-- ✅ Connection state tracking
-- ✅ Implements `ConnectionManagerInterface` (real implementation)
-- ✅ Implements `ConnectionInterface` (adapter)
+-  **Real Implementation:** Creates actual connection pools using Hyperf (`SwooleConnection`)
+-  **Adapter:** Wraps Hyperf Connection instances for contracts (`SwooleConnectionAdapter`)
+-  **True Connection Pooling:** Hyperf-based connection pooling (not simple caching)
+-  **Multiple Connections Per Pool:** Supports concurrent connections from the same pool
+-  **Pool Management:** Min/max connections, idle timeout, health checks
+-  **Multi-Driver Support:** MySQL (default), PostgreSQL, and other PDO drivers
+-  **MySQL Optimizations:** Charset/collation setup, buffered queries, strict SQL mode
+-  **Null Safety:** Comprehensive null checks in cleanup methods
+-  **Validation:** Connection tracking validation with logging
+-  **Memory Leak Prevention:** Multi-layered protection (pool timeout, destructor, size limits)
+-  **Concurrency Safe:** No race conditions, thread-safe operations
+-  **Security:** Input validation, credential masking, error message sanitization
+-  Transaction support (begin, commit, rollback)
+-  Error handling
+-  Connection state tracking
+-  Implements `ConnectionManagerInterface` (real implementation)
+-  Implements `ConnectionInterface` (adapter)
 
 ## Installation
 
@@ -250,17 +251,18 @@ The `SwooleConnection` class has undergone comprehensive refactoring to fix crit
 
 ### Key Improvements
 
-- ✅ **Multiple Connections Per Pool** - Fixed design flaw allowing true concurrent connections
-- ✅ **Null Safety** - Comprehensive null checks in cleanup methods prevent crashes
-- ✅ **Race Condition Elimination** - Thread-safe operations, no synchronization needed
-- ✅ **Memory Leak Prevention** - Multi-layered protection documented and implemented
-- ✅ **Validation** - Connection tracking validation with logging for debugging
-- ✅ **Error Handling** - Robust exception handling throughout
-- ✅ **Code Quality** - PHPStan Level 9 passes, all tests passing
+-  **Multiple Connections Per Pool** - Fixed design flaw allowing true concurrent connections
+-  **Null Safety** - Comprehensive null checks in cleanup methods prevent crashes
+-  **Race Condition Elimination** - Thread-safe operations, no synchronization needed
+-  **Memory Leak Prevention** - Multi-layered protection documented and implemented
+-  **Validation** - Connection tracking validation with logging for debugging
+-  **Error Handling** - Robust exception handling throughout
+-  **Security** - Input validation, credential masking, error sanitization via `SwooleConnectionSecurity`
+-  **Code Quality** - PHPStan Level 9 passes, all tests passing
 
 ### Refactoring Metrics
 
-- **Tests:** 247 tests, 762 assertions (210 unit + 27 integration + 10 performance)
+- **Tests:** 269 tests, 873 assertions (219 unit + 27 integration + 10 performance + 12 security)
 - **PHPStan:** Level 9 passes (no errors)
 - **Performance:** Excellent metrics (see [PERFORMANCE_REPORT.md](PERFORMANCE_REPORT.md))
 - **Breaking Changes:** Zero - 100% backward compatible
@@ -278,32 +280,35 @@ vendor/bin/phpstan analyse --level 9
 
 ### Test Results
 
-- ✅ **247 tests** passing (762 assertions: 210 unit + 27 integration + 10 performance)
-- ✅ **PHPStan Level 9** passes (no errors)
-- ✅ **96.98% code coverage** (353/364 lines)
-- ✅ **Performance tests** - All benchmarks passing with excellent metrics
-- ✅ **No breaking changes** - all refactoring maintains backward compatibility
+-  **269 tests** passing (873 assertions: 219 unit + 27 integration + 10 performance + 12 security)
+-  **PHPStan Level 9** passes (no errors)
+-  **97.32% code coverage** (436/448 lines)
+-  **Performance tests** - All benchmarks passing with excellent metrics
+-  **Security tests** - All security tests passing
+-  **No breaking changes** - all refactoring maintains backward compatibility
 
 ### Test Coverage
 
 The package includes comprehensive test coverage:
 
-- **Overall Coverage:** 96.98% lines (353/364), 95.24% methods (80/84)
-- **SwooleConnection:** 90.98% lines (111/122), 80.00% methods (16/20)
+- **Overall Coverage:** 97.32% lines (436/448), 94.68% methods (89/94)
+- **SwooleConnection:** 80.00% methods (16/20)
 - **SwooleConnectionAdapter:** 100.00% lines, 100.00% methods
 - **SwooleErrorLogLogger:** 100.00% lines, 100.00% methods
-- **Total Tests:** 247 tests (210 unit + 27 integration + 10 performance), 762 assertions
+- **SwooleConnectionSecurity:** 90.00% methods (9/10)
+- **Total Tests:** 269 tests (219 unit + 27 integration + 10 performance + 12 security), 873 assertions
 - **PHPStan:** Level 9 passes (no errors)
 - **Performance:** See [PERFORMANCE_REPORT.md](PERFORMANCE_REPORT.md) for detailed benchmarks
-- **Status:** All tests passing ✅
+- **Status:** All tests passing
 
 ### Test Suites
 
-#### Unit Tests (210 tests)
+#### Unit Tests (219 tests)
 - **SwooleConnectionTest** - Unit tests for `SwooleConnection` (isolated testing with mocks)
 - **SwooleConnectionAdapterTest** - Unit tests for `SwooleConnectionAdapter`
 - **SwooleErrorLogLoggerTest** - Unit tests for `SwooleErrorLogLogger`
 - **SwooleEnvDetectTest** - Unit tests for `SwooleEnvDetect`
+- **SwooleConnectionSecurityTest** - Unit tests for `SwooleConnectionSecurity`
 - **DatabaseConfigTest** - Unit tests for `DatabaseConfig`
 - **PoolConfigTest** - Unit tests for `PoolConfig`
 - **SwooleConnectionPoolStatsTest** - Unit tests for `SwooleConnectionPoolStats`
@@ -337,6 +342,18 @@ The package includes comprehensive test coverage:
   - Pool statistics retrieval performance
   - Full lifecycle performance
   - See [PERFORMANCE_REPORT.md](PERFORMANCE_REPORT.md) for detailed results
+
+#### Security Tests (12 tests)
+- **SwooleConnectionSecurityTest** - Security tests for `SwooleConnection` (12 tests)
+  - Credential protection (passwords not logged)
+  - Input validation (pool name validation)
+  - DSN injection prevention
+  - Error message sanitization
+  - Environment variable sanitization
+  - Connection pool exhaustion protection
+  - Timeout protection
+  - Information disclosure prevention
+  - Resource cleanup verification
 
 ### Generating Coverage Report
 
