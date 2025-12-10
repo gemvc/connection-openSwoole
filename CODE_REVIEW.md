@@ -19,6 +19,210 @@ The `connection-openswoole` package has been created following the same patterns
 
 ---
 
+## 🔧 How SwooleConnection Works
+
+### Overview
+
+`SwooleConnection` is a singleton connection manager that creates and manages Hyperf-based database connection pools for OpenSwoole environments. It provides true connection pooling, allowing multiple concurrent connections from the same pool while efficiently reusing database connections across requests.
+
+### Architecture Flow
+
+```
+Application Code
+    ↓
+SwooleConnection::getInstance()
+    ↓
+[Singleton Instance]
+    ↓
+getConnection($poolName)
+    ↓
+Hyperf PoolFactory → Pool → Connection (PDO)
+    ↓
+SwooleConnectionAdapter (wraps Hyperf Connection)
+    ↓
+ConnectionInterface (returned to application)
+```
+
+### Initialization Process
+
+When `getInstance()` is called for the first time:
+
+1. **Constructor (`__construct()`)**
+   - Creates `SwooleEnvDetect` to read environment variables
+   - Calls `initialize()` to set up the connection pool infrastructure
+
+2. **Initialize Logger (`initializeLogger()`)**
+   - Creates `SwooleErrorLogLogger` for error reporting
+   - Logs pool creation in dev environment
+
+3. **Initialize Container (`initializeContainer()`)**
+   - Creates Hyperf DI `Container` with empty definition source
+   - Reads database configuration from `$_ENV` via `SwooleEnvDetect`
+   - Binds database config to `ConfigInterface`
+   - Binds container to itself (circular reference, handled by PHP GC)
+   - Binds logger to `StdoutLoggerInterface`
+
+4. **Initialize Event Dispatcher (`initializeEventDispatcher()`)**
+   - Creates `ListenerProvider` for event listeners
+   - Creates `EventDispatcher` with logger
+   - Binds both to container (required by Hyperf pool)
+
+5. **Initialize Pool Factory (`initializePoolFactory()`)**
+   - Creates `PoolFactory` with container
+   - PoolFactory reads database config from container
+   - Creates connection pools based on configuration
+
+6. **Mark as Initialized**
+   - Sets `$initialized = true`
+   - Instance is ready to serve connections
+
+**Error Handling:** If any step fails, `handleInitializationFailure()` cleans up partially created resources and sets error state.
+
+### Connection Lifecycle
+
+#### Getting a Connection
+
+```php
+$manager = SwooleConnection::getInstance();
+$connection = $manager->getConnection('default');
+```
+
+**What happens:**
+
+1. **Clear previous errors** - `clearError()` resets error state
+2. **Get from Hyperf Pool** - `$poolFactory->getPool($poolName)->get()`
+   - Hyperf pool manages connection reuse, health checks, and timeouts
+   - Returns a `Hyperf\DbConnection\Connection` instance (wraps PDO)
+   - Each call gets a **new** connection from the pool (allows concurrency)
+3. **Wrap with Adapter** - `createAndStoreAdapter()`
+   - Creates `SwooleConnectionAdapter` wrapping the Hyperf Connection
+   - Adapter implements `ConnectionInterface` from contracts
+   - Stores adapter in `$activeConnections[]` (flat array for tracking)
+4. **Return to Application** - Returns `ConnectionInterface` instance
+
+**Key Points:**
+- Multiple calls to `getConnection()` return different connection instances
+- Hyperf pool handles connection reuse internally
+- No connection caching at the manager level (allows true pooling)
+- Each connection is tracked in `$activeConnections` array
+
+#### Using a Connection
+
+```php
+$pdo = $connection->getConnection(); // Get underlying PDO
+$connection->beginTransaction();
+// ... database operations ...
+$connection->commit();
+```
+
+**What happens:**
+- `getConnection()` returns the underlying PDO instance
+- Transaction methods are handled by the adapter
+- All operations use the pooled connection
+
+#### Releasing a Connection
+
+```php
+$manager->releaseConnection($connection);
+```
+
+**What happens:**
+
+1. **Find in Tracking** - Searches `$activeConnections` array for the connection
+2. **Remove from Tracking** - Unsets the connection from the array
+3. **Get Driver** - Calls `$connection->getConnection()` to get PDO
+4. **Release to Pool** - Calls `$connection->releaseConnection($driver)`
+   - Adapter releases the Hyperf Connection back to the pool
+   - Hyperf pool handles connection reuse and health checks
+5. **Log Warning** (if not found) - Logs warning if connection wasn't tracked
+
+**Key Points:**
+- Always call `releaseConnection()` when done (prevents memory leaks)
+- Connection is returned to Hyperf pool for reuse
+- Pool timeout provides automatic cleanup if release is forgotten
+- Destructor provides final cleanup on shutdown
+
+### Key Components
+
+#### 1. Singleton Pattern
+- **Purpose:** Ensures single instance per process/worker
+- **Implementation:** Static `$instance` property
+- **Usage:** Always use `getInstance()`, never `new SwooleConnection()`
+- **Why:** Multiple instances would create separate pools, causing leaks
+
+#### 2. Hyperf Integration
+- **PoolFactory:** Creates and manages connection pools
+- **Pool:** Manages connection lifecycle (create, reuse, health check, timeout)
+- **Connection:** Wraps PDO with pool-aware release mechanism
+- **Container:** Dependency injection for configuration and services
+
+#### 3. Connection Tracking
+- **Purpose:** Track active connections for statistics and cleanup
+- **Structure:** Flat array `$activeConnections[]` (not keyed by pool name)
+- **Why Flat Array:** Allows multiple connections from same pool
+- **Usage:** Statistics, destructor cleanup, validation
+
+#### 4. Adapter Pattern
+- **SwooleConnectionAdapter:** Wraps Hyperf Connection
+- **Purpose:** Implements `ConnectionInterface` from contracts
+- **Benefits:** Framework-agnostic interface, transaction management
+
+#### 5. Environment Detection
+- **SwooleEnvDetect:** Reads `$_ENV` variables
+- **Purpose:** Database configuration, pool settings, environment detection
+- **No Framework Dependency:** Reads directly from `$_ENV`
+
+### Memory Leak Prevention
+
+Four layers of protection:
+
+1. **Hyperf Pool Timeout** (`max_idle_time`, default: 60s)
+   - Automatically closes idle connections
+   - Prevents unbounded growth
+
+2. **Explicit Release** (`releaseConnection()`)
+   - Applications should call this when done
+   - Best practice for optimal resource management
+
+3. **Destructor Cleanup** (`__destruct()`)
+   - Releases all tracked connections on shutdown
+   - Safety net for long-running processes
+
+4. **Pool Size Limits** (`max_connections`, default: 16)
+   - Hard limit on maximum connections
+   - Prevents resource exhaustion
+
+### Concurrency & Thread Safety
+
+- **No Race Conditions:** Removed check-then-act patterns
+- **Direct Pool Access:** Always calls pool factory directly
+- **Hyperf Handles Concurrency:** Pool is thread-safe internally
+- **No Synchronization Needed:** No locks or mutexes required
+
+### Error Handling
+
+- **Error Storage:** `$error` property stores last error
+- **Error Context:** Additional context information (pool name, PID, timestamp)
+- **Exception Handling:** All `\Throwable` caught and converted to errors
+- **Best-Effort Cleanup:** Continues cleanup even if individual connections fail
+- **Null Safety:** Comprehensive null checks prevent crashes
+
+### Configuration
+
+Reads from `$_ENV` variables:
+- **Database:** `DB_DRIVER`, `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`
+- **Pool Settings:** `MIN_DB_CONNECTION_POOL`, `MAX_DB_CONNECTION_POOL`
+- **Timeouts:** `DB_CONNECTION_TIME_OUT`, `DB_CONNECTION_EXPIER_TIME`, `DB_CONNECTION_MAX_AGE`
+- **Environment:** `APP_ENV` (for dev logging)
+
+### Testing Support
+
+- **`resetInstance()`:** Clears singleton for testing
+- **Mockable:** Can mock `$_ENV` for isolated testing
+- **No Framework Dependencies:** Easy to test in isolation
+
+---
+
 ## ✅ 1. Interface Compliance
 
 ### ConnectionManagerInterface Implementation
@@ -163,7 +367,7 @@ public function __destruct()
 ### Null Safety
 - ✅ **Nullable returns:** `?ConnectionInterface`, `?string` where appropriate
 - ✅ **Null checks:** Proper null handling throughout
-- ✅ **Cleanup null safety:** Comprehensive null checks in `resetInstance()` and `__destruct()` (REFACTORED)
+- ✅ **Cleanup null safety:** Comprehensive null checks in `resetInstance()` and `__destruct()` 
 - ✅ **Driver null handling:** Null driver gracefully handled in `releaseConnection()` (REFACTORED)
 
 **Result:** ✅ Type safety is correct (PHPStan Level 9 compatible, passes with no errors)
@@ -203,7 +407,6 @@ public function __destruct()
 - ✅ **PHPStan:** Level 9 passes (no errors)
 - ✅ **Code Coverage:** 100% for all classes
 
-**Result:** ✅ Package is fully tested and production ready
 
 ---
 
@@ -216,12 +419,7 @@ public function __destruct()
 - ✅ Complete test coverage (195 tests, 563 assertions)
 - ✅ PHPStan Level 9 verification (no errors)
 - ✅ Framework integration (DatabaseManagerFactory updated)
-- ✅ **Refactoring complete** - All 5 critical issues fixed:
-  - ✅ Issue #1: Multiple connections per pool (fixed)
-  - ✅ Issue #2: Null safety in cleanup (fixed)
-  - ✅ Issue #3: Race condition eliminated (fixed)
-  - ✅ Issue #4: Memory leak prevention documented
-  - ✅ Issue #5: Validation in releaseConnection (fixed)
+
 
 ### Pending
 - ⏳ Publish to GitHub repository
@@ -234,7 +432,7 @@ public function __destruct()
 
 ## 📊 Final Verdict
 
-### Overall Assessment: ✅ **REFACTORED & PRODUCTION READY**
+### Overall Assessment: ✅
 
 **Strengths:**
 1. ✅ Correctly implements all interface methods
@@ -253,12 +451,6 @@ public function __destruct()
 14. ✅ PHPStan Level 9 passes
 15. ✅ Follows same patterns as connection-pdo
 
-**Refactoring Achievements:**
-- ✅ All 5 critical issues fixed
-- ✅ Zero breaking changes
-- ✅ Improved code quality and robustness
-- ✅ Comprehensive test coverage
-- ✅ Excellent documentation
 
 **Next Steps:**
 - ✅ **Package structure complete** - Ready for GitHub
@@ -287,15 +479,16 @@ The `connection-openswoole` package is:
 - ✅ **Concurrency safe:** No race conditions, thread-safe operations
 - ✅ **Type safe:** PHPStan Level 9 compatible (passes with no errors)
 - ✅ **Fully tested:** 195 tests, 563 assertions, all passing
-- ✅ **Refactored:** All 5 critical issues fixed
 - ✅ **Production ready:** Package complete and tested
 
-**Refactoring Summary:**
-- ✅ Issue #1: Design flaw fixed - Multiple connections per pool now allowed
-- ✅ Issue #2: Null safety added - Comprehensive null checks in cleanup
-- ✅ Issue #3: Race condition eliminated - Thread-safe operations
-- ✅ Issue #4: Memory leak prevention documented - Multi-layered protection
-- ✅ Issue #5: Validation added - Connection tracking validation
+## License
 
-**Ready to push to GitHub!** ✅
+MIT
 
+---
+
+## Made with ❤️ by Ali Khorsandfard
+
+This package is part of the [GEMVC Repository](https://github.com/gemvc) framework ecosystem.
+
+[GEMVC is PHP framework built for Microservice.](https://www.gemvc.de)

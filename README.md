@@ -237,9 +237,14 @@ Contracts Package:
 - **`SwooleConnectionAdapter`** implements `ConnectionInterface` (from contracts)
 - **Result:** Complete implementation of connection contracts, framework-agnostic
 
+## Documentation
+
+- **[CODE_REVIEW.md](CODE_REVIEW.md)** - Complete code review with detailed explanation of how the class works, architecture, and implementation details
+- For detailed refactoring history, see `REFACTORING_COMPLETE.md` (if available)
+
 ## Refactoring & Improvements
 
-The `SwooleConnection` class has undergone comprehensive refactoring to fix critical issues and improve code quality. See `REFACTORING_COMPLETE.md` for full details.
+The `SwooleConnection` class has undergone comprehensive refactoring to fix critical issues and improve code quality. See [CODE_REVIEW.md](CODE_REVIEW.md) for detailed explanation of how the class works.
 
 ### Key Improvements
 
