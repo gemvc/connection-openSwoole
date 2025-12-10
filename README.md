@@ -240,6 +240,8 @@ Contracts Package:
 ## Documentation
 
 - **[CODE_REVIEW.md](CODE_REVIEW.md)** - Complete code review with detailed explanation of how the class works, architecture, and implementation details
+- **[ASSESSMENT.md](ASSESSMENT.md)** - Comprehensive library assessment and quality analysis
+- **[PERFORMANCE_REPORT.md](PERFORMANCE_REPORT.md)** - Performance benchmarks and metrics
 - For detailed refactoring history, see `REFACTORING_COMPLETE.md` (if available)
 
 ## Refactoring & Improvements
@@ -258,8 +260,9 @@ The `SwooleConnection` class has undergone comprehensive refactoring to fix crit
 
 ### Refactoring Metrics
 
-- **Tests:** 237 tests, 748 assertions (210 unit + 27 integration)
+- **Tests:** 247 tests, 762 assertions (210 unit + 27 integration + 10 performance)
 - **PHPStan:** Level 9 passes (no errors)
+- **Performance:** Excellent metrics (see [PERFORMANCE_REPORT.md](PERFORMANCE_REPORT.md))
 - **Breaking Changes:** Zero - 100% backward compatible
 - **Issues Fixed:** All 5 critical issues resolved
 
@@ -275,9 +278,10 @@ vendor/bin/phpstan analyse --level 9
 
 ### Test Results
 
-- ✅ **237 tests** passing (748 assertions)
+- ✅ **247 tests** passing (762 assertions: 210 unit + 27 integration + 10 performance)
 - ✅ **PHPStan Level 9** passes (no errors)
 - ✅ **96.98% code coverage** (353/364 lines)
+- ✅ **Performance tests** - All benchmarks passing with excellent metrics
 - ✅ **No breaking changes** - all refactoring maintains backward compatibility
 
 ### Test Coverage
@@ -288,8 +292,9 @@ The package includes comprehensive test coverage:
 - **SwooleConnection:** 90.98% lines (111/122), 80.00% methods (16/20)
 - **SwooleConnectionAdapter:** 100.00% lines, 100.00% methods
 - **SwooleErrorLogLogger:** 100.00% lines, 100.00% methods
-- **Total Tests:** 237 tests (210 unit + 27 integration), 748 assertions
+- **Total Tests:** 247 tests (210 unit + 27 integration + 10 performance), 762 assertions
 - **PHPStan:** Level 9 passes (no errors)
+- **Performance:** See [PERFORMANCE_REPORT.md](PERFORMANCE_REPORT.md) for detailed benchmarks
 - **Status:** All tests passing ✅
 
 ### Test Suites
@@ -321,6 +326,17 @@ The package includes comprehensive test coverage:
   - Error handling strategies
   - Resource cleanup patterns
   - Multiple pool usage
+
+#### Performance Tests (10 tests)
+- **SwooleConnectionPerformanceTest** - Performance benchmarks and metrics (10 tests)
+  - Singleton initialization performance
+  - Connection acquisition/release performance
+  - Multiple connection handling
+  - Memory usage analysis
+  - Concurrent operations throughput
+  - Pool statistics retrieval performance
+  - Full lifecycle performance
+  - See [PERFORMANCE_REPORT.md](PERFORMANCE_REPORT.md) for detailed results
 
 ### Generating Coverage Report
 

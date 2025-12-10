@@ -275,7 +275,12 @@ class SwooleEnvDetect
     protected function getStringEnv(string $key, string $default = ''): string
     {
         $value = $_ENV[$key] ?? $default;
-        return is_string($value) ? $value : $default;
+        if (!is_string($value)) {
+            return $default;
+        }
+        
+        // Sanitize environment variable value for security
+        return SwooleConnectionSecurity::sanitizeEnvValue($value);
     }
 
     /**

@@ -127,18 +127,28 @@ class SwooleErrorLogLogger implements StdoutLoggerInterface
     {
         $contextStr = $context !== '' ? "$context: " : '';
         
-        // Format context data if provided
+        // Format context data if provided (sanitize to remove sensitive data)
         $contextDataStr = '';
         if (!empty($contextData)) {
-            $contextDataStr = ' [Context: ' . json_encode($contextData) . ']';
+            // Sanitize context data before JSON encoding
+            $sanitizedContext = $contextData;
+            if (isset($sanitizedContext['password'])) {
+                $sanitizedContext['password'] = '***';
+            }
+            $contextDataStr = ' [Context: ' . json_encode($sanitizedContext) . ']';
         }
+        
+        // Sanitize exception message to remove sensitive data
+        $sanitizedMessage = \Gemvc\Database\Connection\OpenSwoole\SwooleConnectionSecurity::sanitizeErrorMessage(
+            $e->getMessage()
+        );
         
         $message = sprintf(
             '%s%s (%d): %s [File: %s:%d]%s',
             $contextStr,
             get_class($e),
             $e->getCode(),
-            $e->getMessage(),
+            $sanitizedMessage,
             $e->getFile(),
             $e->getLine(),
             $contextDataStr

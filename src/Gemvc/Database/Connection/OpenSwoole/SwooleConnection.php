@@ -267,6 +267,9 @@ class SwooleConnection implements ConnectionManagerInterface
     {
         $this->clearError();
 
+        // Validate and sanitize pool name for security
+        $poolName = SwooleConnectionSecurity::validateAndSanitizePoolName($poolName);
+
         try {
             if ($this->poolFactory === null) {
                 throw new \RuntimeException('Connection pool factory not initialized');
@@ -282,7 +285,14 @@ class SwooleConnection implements ConnectionManagerInterface
                 'timestamp' => date('Y-m-d H:i:s'),
                 'error_code' => $e->getCode()
             ];
-            $this->setError('Failed to get database connection: ' . $e->getMessage(), $context);
+            
+            // Sanitize error message to remove sensitive data
+            $errorMessage = SwooleConnectionSecurity::sanitizeErrorMessage(
+                'Failed to get database connection: ' . $e->getMessage(),
+                $this->envDetect->dbPassword
+            );
+            
+            $this->setError($errorMessage, $context);
             ($this->logger ?? new SwooleErrorLogLogger())->handleException($e, "SwooleConnection::getConnection() [Pool: $poolName]", 'error', $context);
             return null;
         }
