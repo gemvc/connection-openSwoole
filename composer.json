@@ -30,6 +30,9 @@
         "hyperf/di": "^3.0",
         "hyperf/config": "^3.0",
         "hyperf/event": "^3.0",
+        "hyperf/utils": "^3.0",
+        "hyperf/serializer": "^3.0",
+        "hyperf/codec": "^3.0",
         "psr/container": "^2.0",
         "psr/event-dispatcher": "^1.0",
         "psr/log": "^3.0"
