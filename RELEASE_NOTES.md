@@ -1,12 +1,12 @@
 
 ![openswoole-connection-poot](https://github.com/user-attachments/assets/ae70a302-5ee0-4a1c-a981-23e3ee42b2f2)
-# Release Notes: v1.0.0 - Production Ready Release
+# Release Notes: v1.1.0 - PostgreSQL Support Release
 
-🎉 **First production release** of the OpenSwoole connection pooling library for GEMVC framework.
+🎉 **Minor release** of the OpenSwoole connection pooling library for GEMVC framework with official PostgreSQL support.
 
 ## Overview
 
-This release marks the **production-ready** debut of `gemvc/connection-openswoole`, a high-performance, secure, and well-tested connection pooling implementation for OpenSwoole environments.
+This release adds **official PostgreSQL support** to `gemvc/connection-openswoole` while preserving the existing high-performance, secure, and well-tested connection pooling behavior for OpenSwoole environments.
 
 ## Quality Metrics
 
@@ -21,6 +21,7 @@ This release marks the **production-ready** debut of `gemvc/connection-openswool
 
 ### Core Functionality
 - **True Connection Pooling** - Hyperf-based connection pooling (not simple caching)
+- **Official PostgreSQL Support** - Added support for `DB_DRIVER=pgsql` via Hyperf's PostgreSQL connector
 - **Multi-Driver Support** - MySQL (default), PostgreSQL, and other PDO drivers
 - **Concurrent Connections** - Multiple connections per pool for high concurrency
 - **Pool Management** - Min/max connections, idle timeout, health checks
@@ -89,7 +90,7 @@ composer require gemvc/connection-openswoole
 
 ## Breaking Changes
 
-**None** - This is the initial release with a stable API.
+**None** - Existing APIs remain stable; this release adds PostgreSQL support without breaking the current MySQL flow.
 
 ## Production Readiness
 
@@ -109,9 +110,9 @@ The library has been thoroughly tested, reviewed, and verified for production de
 
 ---
 
-**Release Date:** December 10, 2025  
-**Version:** 1.0.0  
-**Status:** Production Ready
+**Release Date:** July 15, 2026  
+**Version:** 1.1.0  
+**Status:** Minor Release
 
 ---
 

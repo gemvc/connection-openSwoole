@@ -3,15 +3,15 @@
 
 # Library Assessment: gemvc/connection-openswoole
 
-**Assessment Date:** December 10, 2025  
-**Version:** Current (1.0.0)  
+**Assessment Date:** July 15, 2026  
+**Version:** Current (1.1.0)  
 **Assessor:** Ali Khorsandfard
 
 ---
 
 ## Executive Summary
 
-The `gemvc/connection-openswoole` library is a **production-ready** OpenSwoole connection pooling implementation for the GEMVC framework. The library demonstrates excellent code quality, comprehensive test coverage, strong security practices, and robust architecture.
+The `gemvc/connection-openswoole` library is a **production-ready** OpenSwoole connection pooling implementation for the GEMVC framework with **official PostgreSQL support** in the new v1.1.0 release. The library demonstrates excellent code quality, comprehensive test coverage, strong security practices, and robust architecture.
 
 **Overall Rating: Good**
 
