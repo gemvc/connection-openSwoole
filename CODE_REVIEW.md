@@ -4,7 +4,7 @@
 # Code Review: gemvc/connection-openswoole
 
 **Review Date:** July 15, 2026  
-**Version:** 1.1.0  
+**Version:** 1.2.0  
 **Reviewer:** Ali Khorsandfard  
 **Status:** ✅ Production Ready
 
@@ -12,7 +12,7 @@
 
 ## Executive Summary
 
-The `gemvc/connection-openswoole` library is a **production-ready** OpenSwoole connection pooling implementation that demonstrates excellent code quality, comprehensive test coverage, strong security practices, and robust architecture. The v1.1.0 release adds **official PostgreSQL support** while preserving the tested MySQL behavior and maintaining PHPStan Level 9 compliance.
+The `gemvc/connection-openswoole` library is a **production-ready** OpenSwoole connection pooling implementation that demonstrates excellent code quality, comprehensive test coverage, strong security practices, and robust architecture. The v1.2.0 release adds **official PostgreSQL support** while preserving the tested MySQL behavior and maintaining PHPStan Level 9 compliance.
 
 **Overall Assessment:** ✅ **APPROVED FOR PRODUCTION USE**
 

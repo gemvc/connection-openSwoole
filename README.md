@@ -29,7 +29,7 @@ This package provides OpenSwoole connection implementation for GEMVC framework:
    - **True connection pooling** (not simple caching)
    - **Supports multiple database drivers:**
      - **MySQL** (default, primary) - Optimized with MySQL-specific features
-     - **PostgreSQL** (new in v1.1.0) - Officially supported through Hyperf's PostgreSQL connector
+     - **PostgreSQL** (new in v1.2.0) - Officially supported through Hyperf's PostgreSQL connector
      - **Other PDO drivers** - Via standard DSN format
 
 2. **`SwooleConnectionAdapter`** - Adapter that wraps Hyperf Connection instances
@@ -47,7 +47,7 @@ It's designed for OpenSwoole environments where connections are shared across re
 -  **True Connection Pooling:** Hyperf-based connection pooling (not simple caching)
 -  **Multiple Connections Per Pool:** Supports concurrent connections from the same pool
 -  **Pool Management:** Min/max connections, idle timeout, health checks
--  **Multi-Driver Support:** MySQL (default), PostgreSQL (officially supported in v1.1.0), and other PDO drivers
+-  **Multi-Driver Support:** MySQL (default), PostgreSQL (officially supported in v1.2.0), and other PDO drivers
 -  **MySQL Optimizations:** Charset/collation setup, buffered queries, strict SQL mode
 -  **Null Safety:** Comprehensive null checks in cleanup methods
 -  **Validation:** Connection tracking validation with logging

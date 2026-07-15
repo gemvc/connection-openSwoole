@@ -1,6 +1,6 @@
 
 ![openswoole-connection-poot](https://github.com/user-attachments/assets/ae70a302-5ee0-4a1c-a981-23e3ee42b2f2)
-# Release Notes: v1.1.0 - PostgreSQL Support Release
+# Release Notes: v1.2.0 - PostgreSQL Support Release
 
 🎉 **Minor release** of the OpenSwoole connection pooling library for GEMVC framework with official PostgreSQL support.
 
@@ -111,7 +111,7 @@ The library has been thoroughly tested, reviewed, and verified for production de
 ---
 
 **Release Date:** July 15, 2026  
-**Version:** 1.1.0  
+**Version:** 1.2.0  
 **Status:** Minor Release
 
 ---

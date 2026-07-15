@@ -4,7 +4,7 @@
 # Performance Report: gemvc/connection-openswoole
 
 **Report Date:** July 15, 2026  
-**Version:** 1.1.0  
+**Version:** 1.2.0  
 **Test Environment:** Windows 10, PHP 8.2.12  
 **Test Status:** 9/10 tests passing (1 test exceeded threshold due to environment)
 
@@ -12,7 +12,7 @@
 
 ## Executive Summary
 
-The `gemvc/connection-openswoole` library demonstrates **excellent performance characteristics** with sub-millisecond connection acquisition, zero memory leaks, and high throughput capabilities. The v1.1.0 release adds PostgreSQL support without compromising the existing performance profile.
+The `gemvc/connection-openswoole` library demonstrates **excellent performance characteristics** with sub-millisecond connection acquisition, zero memory leaks, and high throughput capabilities. The v1.2.0 release adds PostgreSQL support without compromising the existing performance profile.
 
 **Performance Rating:** ★★★★★ (5/5) - Excellent
 
