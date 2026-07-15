@@ -10,6 +10,9 @@ use Hyperf\Di\Definition\DefinitionSource;
 use Hyperf\Config\Config;
 use Hyperf\DbConnection\Pool\PoolFactory;
 use Hyperf\DbConnection\Connection;
+use Hyperf\Database\Connection as DatabaseConnection;
+use Hyperf\Database\PgSQL\Connectors\PostgresConnector;
+use Hyperf\Database\PgSQL\PostgreSqlConnection;
 use Hyperf\Contract\StdoutLoggerInterface;
 use Hyperf\Event\EventDispatcher;
 use Hyperf\Event\ListenerProvider;
@@ -136,6 +139,7 @@ class SwooleConnection implements ConnectionManagerInterface
             $this->initializeContainer();
             $containerCreated = true;
             $this->initializeEventDispatcher();
+            $this->registerPgsqlDriverSupport();
             $this->initializePoolFactory();
             $this->initialized = true;
         } catch (\Throwable $e) {
@@ -213,6 +217,40 @@ class SwooleConnection implements ConnectionManagerInterface
             $this->container->set(\Psr\EventDispatcher\EventDispatcherInterface::class, $eventDispatcher);
         } catch (\Throwable $e) {
             ($this->logger ?? new SwooleErrorLogLogger())->logAndThrowException($e, 'event dispatcher');
+        }
+    }
+
+    /**
+     * Register PostgreSQL driver support with the DI container and Hyperf's Connection resolver.
+     *
+     * Hyperf's core `hyperf/database` package only ships a MySQL connector out of the box.
+     * PostgreSQL support lives in the separate `hyperf/database-pgsql` package, which normally
+     * wires itself up via a ConfigProvider + event listener when running inside the full Hyperf
+     * framework. Since this project bootstraps a minimal container directly, we replicate that
+     * wiring here so `DB_DRIVER=pgsql` works.
+     *
+     * @return void
+     * @throws \RuntimeException If container is not initialized
+     */
+    private function registerPgsqlDriverSupport(): void
+    {
+        if ($this->container === null) {
+            throw new \RuntimeException('Container must be initialized before registering driver support');
+        }
+
+        if (!class_exists(PostgresConnector::class)) {
+            // hyperf/database-pgsql is not installed; only mysql will be available.
+            return;
+        }
+
+        try {
+            $this->container->set('db.connector.pgsql', new PostgresConnector());
+
+            DatabaseConnection::resolverFor('pgsql', static function ($connection, $database, $prefix, $config) {
+                return new PostgreSqlConnection($connection, $database, $prefix, $config);
+            });
+        } catch (\Throwable $e) {
+            ($this->logger ?? new SwooleErrorLogLogger())->handleException($e, 'Failed to register pgsql driver support');
         }
     }
 

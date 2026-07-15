@@ -26,6 +26,7 @@
     "require": {
         "php": ">=8.2",
         "gemvc/connection-contracts": "^1.0",
+        "hyperf/database-pgsql": "^3.0",
         "hyperf/db-connection": "^3.0",
         "hyperf/di": "^3.0",
         "hyperf/config": "^3.0",
